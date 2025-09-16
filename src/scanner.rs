@@ -1,14 +1,17 @@
-use bt_hci::cmd::le::LeSetScanParams;
+use crate::schema::RuuviRawV2;
 use bt_hci::controller::ControllerCmdSync;
+use bt_hci::param::LeAdvEventKind;
+use bt_hci::{cmd::le::LeSetScanParams, param::LeAdvReport};
 use core::cell::RefCell;
+use core::fmt::Write;
 use embassy_futures::join::join;
 use embassy_time::{Duration, Timer};
 use heapless::Deque;
 use trouble_host::prelude::*;
 
-/// Max number of connections
 const CONNECTIONS_MAX: usize = 1;
 const L2CAP_CHANNELS_MAX: usize = 1;
+const RUUVI_MAN_ID: [u8; 2] = [0x99, 0x04];
 
 pub async fn run<C>(controller: C)
 where
@@ -16,7 +19,7 @@ where
 {
     // Using a fixed "random" address can be useful for testing. In real scenarios, one would
     // use e.g. the MAC 6 byte array as the address (how to get that varies by the platform).
-    let address: Address = Address::random([0xff, 0x8f, 0x1b, 0x05, 0xe4, 0xff]);
+    let address: Address = Address::random([0xCA, 0xFE, 0xB0, 0x0B, 0xB0, 0x0B]);
 
     log::info!("Our address = {address:?}");
 
@@ -66,7 +69,19 @@ impl EventHandler for Printer {
         let mut seen = self.seen.borrow_mut();
         while let Some(Ok(report)) = it.next() {
             if !seen.iter().any(|b| b.raw() == report.addr.raw()) {
-                log::info!("discovered: {:?}", report.addr);
+                let be_mac_address = to_be_mac(report.addr.raw());
+                log::info!("discovered: {}", addr_to_hex(&be_mac_address));
+
+                if is_ruuvi_report(report) {
+                    log::info!("Ruuvitag found!");
+                    log::info!("Signal strength: {:?}", report.rssi);
+                    log::info!("Payload: {:?}", report.data);
+
+                    // Ruuvitag v2 raw data starts at index 7
+                    let parsed = RuuviRawV2::from_bytes(&report.data[7..]);
+                    log::info!("Payload: {parsed:?}");
+                }
+
                 if seen.is_full() {
                     seen.pop_front();
                 }
@@ -74,4 +89,28 @@ impl EventHandler for Printer {
             }
         }
     }
+}
+
+fn is_ruuvi_report(report: LeAdvReport<'_>) -> bool {
+    report.addr_kind == AddrKind::RANDOM
+        && report.event_kind == LeAdvEventKind::AdvInd
+        && report.data[5..7] == RUUVI_MAN_ID
+}
+
+fn to_be_mac(data: &[u8]) -> [u8; 6] {
+    let mut be_mac_address = [0x0u8; 6];
+    be_mac_address.copy_from_slice(data);
+    be_mac_address.reverse();
+    be_mac_address
+}
+
+fn addr_to_hex(addr: &[u8]) -> heapless::String<18> {
+    let mut s = heapless::String::<18>::new(); // 17 chars + null terminator
+    for (i, byte) in addr.iter().enumerate() {
+        write!(s, "{byte:02X}").unwrap();
+        if i != addr.len() - 1 {
+            s.push(':').unwrap();
+        }
+    }
+    s
 }
