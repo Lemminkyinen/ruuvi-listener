@@ -7,6 +7,7 @@
 )]
 
 mod scanner;
+mod schema;
 
 use bt_hci::controller::ExternalController;
 use embassy_executor::Spawner;
