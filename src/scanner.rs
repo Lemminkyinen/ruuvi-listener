@@ -47,7 +47,7 @@ where
         loop {
             if let Ok(session) = scanner.scan(&config).await {
                 // scan for ~1s
-            Timer::after(Duration::from_secs(1)).await;
+                Timer::after(Duration::from_secs(1)).await;
                 drop(session); // stop scanning
             }
             // wait before scanning again (tune this)
@@ -75,22 +75,25 @@ impl EventHandler for Printer {
         while let Some(Ok(report)) = it.next() {
             if !seen.iter().any(|b| b.raw() == report.addr.raw()) {
                 let be_mac_address = to_be_mac(report.addr.raw());
-                log::info!("discovered: {}", addr_to_hex(&be_mac_address));
-
                 if is_ruuvi_report(report) {
-                    log::info!("Ruuvitag found!");
+                    log::info!("Ruuvitag found: {}", addr_to_hex(&be_mac_address));
                     log::info!("Signal strength: {:?}", report.rssi);
-                    log::info!("Payload: {:?}", report.data);
-
-                    // Ruuvitag v2 raw data starts at index 7
-                    let parsed = RuuviRawV2::from_bytes(&report.data[7..]);
-                    log::info!("Payload: {parsed:?}");
+                } else {
+                    log::info!("discovered: {}", addr_to_hex(&be_mac_address));
                 }
+            }
 
-                if seen.is_full() {
-                    seen.pop_front();
+            if seen.is_full() {
+                seen.pop_front();
+            }
+            seen.push_back(report.addr).unwrap();
+
+            if is_ruuvi_report(report) {
+                // Ruuvitag v2 raw data starts at index 7
+                match RuuviRawV2::from_bytes(&report.data[7..]) {
+                    Ok(parsed) => log::info!("Payload: {parsed:?}"),
+                    Err(e) => log::error!("Payload error! {e:?}!"),
                 }
-                seen.push_back(report.addr).unwrap();
             }
         }
     }
@@ -99,6 +102,7 @@ impl EventHandler for Printer {
 fn is_ruuvi_report(report: LeAdvReport<'_>) -> bool {
     report.addr_kind == AddrKind::RANDOM
         && report.event_kind == LeAdvEventKind::AdvInd
+        && report.data.len() >= 7
         && report.data[5..7] == RUUVI_MAN_ID
 }
 
