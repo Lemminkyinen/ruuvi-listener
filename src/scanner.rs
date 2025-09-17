@@ -37,16 +37,21 @@ where
     let mut scanner = Scanner::new(central);
     let _ = join(runner.run_with_handler(&printer), async {
         let config = ScanConfig {
-            active: true,
+            active: false, // No need for scan responses, data is all in advertisement payload
             phys: PhySet::M1,
-            interval: Duration::from_secs(1),
-            window: Duration::from_secs(1),
+            interval: Duration::from_millis(1285),
+            window: Duration::from_millis(300),
             ..Default::default()
         };
-        let mut _session = scanner.scan(&config).await.unwrap();
-        // Scan forever
+        // Instead of holding the session forever, run scans in bursts
         loop {
+            if let Ok(session) = scanner.scan(&config).await {
+                // scan for ~1s
             Timer::after(Duration::from_secs(1)).await;
+                drop(session); // stop scanning
+            }
+            // wait before scanning again (tune this)
+            Timer::after(Duration::from_secs(4)).await;
         }
     })
     .await;
