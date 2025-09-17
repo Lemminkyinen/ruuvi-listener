@@ -2,11 +2,9 @@ use crate::schema::RuuviRawV2;
 use bt_hci::controller::ControllerCmdSync;
 use bt_hci::param::LeAdvEventKind;
 use bt_hci::{cmd::le::LeSetScanParams, param::LeAdvReport};
-use core::cell::RefCell;
 use core::fmt::Write;
 use embassy_futures::join::join;
 use embassy_time::{Duration, Timer};
-use heapless::Deque;
 use trouble_host::prelude::*;
 
 const CONNECTIONS_MAX: usize = 1;
@@ -39,15 +37,15 @@ where
         let config = ScanConfig {
             active: false, // No need for scan responses, data is all in advertisement payload
             phys: PhySet::M1,
-            interval: Duration::from_millis(1285),
-            window: Duration::from_millis(300),
+            interval: Duration::from_millis(1000),
+            window: Duration::from_millis(1000),
             ..Default::default()
         };
         // Instead of holding the session forever, run scans in bursts
         loop {
             if let Ok(session) = scanner.scan(&config).await {
-                // scan for ~1s
-                Timer::after(Duration::from_secs(1)).await;
+                // scan for ~2s
+                Timer::after(Duration::from_secs(2)).await;
                 drop(session); // stop scanning
             }
             // wait before scanning again (tune this)
@@ -57,41 +55,24 @@ where
     .await;
 }
 
-struct Printer {
-    seen: RefCell<Deque<BdAddr, 128>>,
-}
+struct Printer {}
 
 impl Printer {
     fn new() -> Self {
-        Printer {
-            seen: RefCell::new(Deque::new()),
-        }
+        Printer {}
     }
 }
 
 impl EventHandler for Printer {
     fn on_adv_reports(&self, mut it: LeAdvReportsIter<'_>) {
-        let mut seen = self.seen.borrow_mut();
         while let Some(Ok(report)) = it.next() {
-            if !seen.iter().any(|b| b.raw() == report.addr.raw()) {
-                let be_mac_address = to_be_mac(report.addr.raw());
-                if is_ruuvi_report(report) {
-                    log::info!("Ruuvitag found: {}", addr_to_hex(&be_mac_address));
-                    log::info!("Signal strength: {:?}", report.rssi);
-                } else {
-                    log::info!("discovered: {}", addr_to_hex(&be_mac_address));
-                }
-            }
-
-            if seen.is_full() {
-                seen.pop_front();
-            }
-            seen.push_back(report.addr).unwrap();
-
             if is_ruuvi_report(report) {
                 // Ruuvitag v2 raw data starts at index 7
                 match RuuviRawV2::from_bytes(&report.data[7..]) {
-                    Ok(parsed) => log::info!("Payload: {parsed:?}"),
+                    Ok(parsed) => {
+                        log::info!("Payload: {parsed:?}");
+                        // Send data to the server
+                    }
                     Err(e) => log::error!("Payload error! {e:?}!"),
                 }
             }
@@ -106,14 +87,14 @@ fn is_ruuvi_report(report: LeAdvReport<'_>) -> bool {
         && report.data[5..7] == RUUVI_MAN_ID
 }
 
-fn to_be_mac(data: &[u8]) -> [u8; 6] {
+fn _to_be_mac(data: &[u8]) -> [u8; 6] {
     let mut be_mac_address = [0x0u8; 6];
     be_mac_address.copy_from_slice(data);
     be_mac_address.reverse();
     be_mac_address
 }
 
-fn addr_to_hex(addr: &[u8]) -> heapless::String<18> {
+fn _addr_to_hex(addr: &[u8]) -> heapless::String<18> {
     let mut s = heapless::String::<18>::new(); // 17 chars + null terminator
     for (i, byte) in addr.iter().enumerate() {
         write!(s, "{byte:02X}").unwrap();
