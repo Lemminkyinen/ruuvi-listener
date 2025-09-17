@@ -14,7 +14,7 @@ cargo install cargo-espflash --locked
 
 #### Template generation
 (Not required, just a note to myself)
-`esp-generate --chip esp32s3 -o embassy -o unstable-hal -o alloc -o wifi -o ble-bleps -o log -o esp-backtrace -o vscode`
+`esp-generate --chip esp32s3 -o embassy -o unstable-hal -o alloc -o wifi -o ble-trouble -o log -o esp-backtrace -o vscode`
 
 #### Setting environment variables
 Has to be done in every session `. $(HOME)/export-esp.sh`
