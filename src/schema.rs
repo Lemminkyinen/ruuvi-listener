@@ -1,3 +1,8 @@
+#[derive(Debug)]
+pub enum ParseError {
+    TooShort,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct RuuviRawV2 {
@@ -15,8 +20,11 @@ pub struct RuuviRawV2 {
 }
 
 impl RuuviRawV2 {
-    pub fn from_bytes(data: &[u8]) -> Self {
-        Self {
+    pub fn from_bytes(data: &[u8]) -> Result<Self, ParseError> {
+        if data.len() < 24 {
+            return Err(ParseError::TooShort);
+        }
+        Ok(Self {
             format: data[0],
             temp: i16::from_be_bytes([data[1], data[2]]),
             humidity: u16::from_be_bytes([data[3], data[4]]),
@@ -28,6 +36,6 @@ impl RuuviRawV2 {
             movement_counter: data[15],
             measurement_seq: u16::from_be_bytes([data[16], data[17]]),
             mac: [data[18], data[19], data[20], data[21], data[22], data[23]],
-        }
+        })
     }
 }
