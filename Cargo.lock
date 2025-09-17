@@ -68,7 +68,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa7f7c19df9648c1da4f5356c4256533e38bd65633b6a41654922475a1c6d777"
 dependencies = [
  "embassy-sync 0.7.2",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embedded-io",
  "embedded-io-async",
  "futures-intrusive",
@@ -232,7 +232,7 @@ dependencies = [
  "embassy-embedded-hal 0.4.0",
  "embassy-futures",
  "embassy-sync 0.6.2",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -299,14 +299,14 @@ dependencies = [
 
 [[package]]
 name = "embassy-net"
-version = "0.7.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0558a231a47e7d4a06a28b5278c92e860f1200f24821d2f365a2f40fe3f3c7b2"
+checksum = "ed041cc19a603d657124fddefdcbe5ef8bd60e77d972793ebb57de93394f5949"
 dependencies = [
  "document-features",
  "embassy-net-driver",
- "embassy-sync 0.7.2",
- "embassy-time 0.5.0",
+ "embassy-sync 0.6.2",
+ "embassy-time",
  "embedded-io-async",
  "embedded-nal-async",
  "heapless 0.8.0",
@@ -364,22 +364,6 @@ dependencies = [
  "embedded-hal-async",
  "futures-util",
  "log",
-]
-
-[[package]]
-name = "embassy-time"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4fa65b9284d974dad7a23bb72835c4ec85c0b540d86af7fc4098c88cff51d65"
-dependencies = [
- "cfg-if",
- "critical-section",
- "document-features",
- "embassy-time-driver",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "futures-core",
 ]
 
 [[package]]
@@ -651,7 +635,7 @@ dependencies = [
  "document-features",
  "embassy-executor",
  "embassy-sync 0.6.2",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embassy-time-driver",
  "embassy-time-queue-utils",
  "esp-config",
@@ -1341,7 +1325,7 @@ dependencies = [
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embedded-io",
  "embedded-io-async",
  "esp-alloc",
@@ -1534,7 +1518,7 @@ dependencies = [
  "bt-hci",
  "embassy-futures",
  "embassy-sync 0.7.2",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embedded-io",
  "futures",
  "heapless 0.8.0",

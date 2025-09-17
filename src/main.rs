@@ -9,19 +9,39 @@
 mod scanner;
 mod schema;
 
+use core::net::Ipv4Addr;
+
 use bt_hci::controller::ExternalController;
 use embassy_executor::Spawner;
+use embassy_net::tcp::TcpSocket;
+use embassy_net::{Runner, StackResources};
+use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
+use esp_wifi::EspWifiController;
 use esp_wifi::ble::controller::BleConnector;
-
+use esp_wifi::wifi::{
+    ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState,
+};
 extern crate alloc;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
+
+macro_rules! mk_static {
+    ($t:ty,$val:expr) => {{
+        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
+        #[deny(unused_attributes)]
+        let x = STATIC_CELL.uninit().write(($val));
+        x
+    }};
+}
+
+const SSID: &str = env!("SSID");
+const PASSWORD: &str = env!("PASSWORD");
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -41,14 +61,95 @@ async fn main(spawner: Spawner) {
 
     log::info!("Embassy initialized!");
 
-    let rng = esp_hal::rng::Rng::new(peripherals.RNG);
     let timer1 = TimerGroup::new(peripherals.TIMG0);
-    let wifi_init =
-        esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller");
-    let (mut _wifi_controller, _interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI)
+    let mut rng = esp_hal::rng::Rng::new(peripherals.RNG);
+
+    let esp_wifi_ctrl = &*mk_static!(
+        EspWifiController<'static>,
+        esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller")
+    );
+
+    let (wifi_controller, interfaces) = esp_wifi::wifi::new(&esp_wifi_ctrl, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
+
+    let wifi_interface = interfaces.sta;
+    let config = embassy_net::Config::dhcpv4(Default::default());
+    let seed = (rng.random() as u64) << 32 | rng.random() as u64;
+
+    // Init network stack
+    let (stack, runner) = embassy_net::new(
+        wifi_interface,
+        config,
+        mk_static!(StackResources<3>, StackResources::<3>::new()),
+        seed,
+    );
+
+    spawner.spawn(connection(wifi_controller)).ok();
+    spawner.spawn(net_task(runner)).ok();
+
+    let mut rx_buffer = [0; 4096];
+    let mut tx_buffer = [0; 4096];
+
+    loop {
+        if stack.is_link_up() {
+            break;
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+
+    log::info!("Waiting to get IP address...");
+    loop {
+        if let Some(config) = stack.config_v4() {
+            log::info!("Got IP: {}", config.address);
+            break;
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+
+    loop {
+        Timer::after(Duration::from_millis(1_000)).await;
+
+        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+
+        socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
+
+        let remote_endpoint = (Ipv4Addr::new(142, 250, 185, 115), 80);
+        log::info!("connecting...");
+        let r = socket.connect(remote_endpoint).await;
+        if let Err(e) = r {
+            log::info!("connect error: {:?}", e);
+            continue;
+        }
+        log::info!("connected!");
+        let mut buf = [0; 1024];
+        loop {
+            use embedded_io_async::Write;
+            let r = socket
+                .write_all(b"GET / HTTP/1.0\r\nHost: www.mobile-j.de\r\n\r\n")
+                .await;
+            if let Err(e) = r {
+                log::info!("write error: {:?}", e);
+                break;
+            }
+            let n = match socket.read(&mut buf).await {
+                Ok(0) => {
+                    log::info!("read EOF");
+                    break;
+                }
+                Ok(n) => n,
+                Err(e) => {
+                    log::info!("read error: {:?}", e);
+                    break;
+                }
+            };
+            log::info!("{}", core::str::from_utf8(&buf[..n]).unwrap());
+        }
+        Timer::after(Duration::from_millis(3000)).await;
+    }
+
+    // Setup BLE
     // find more examples https://github.com/embassy-rs/trouble/tree/main/examples/esp32
-    let transport = BleConnector::new(&wifi_init, peripherals.BT);
+    let transport = BleConnector::new(&esp_wifi_ctrl, peripherals.BT);
     let ble_controller = ExternalController::<_, 20>::new(transport);
 
     scanner::run(ble_controller).await;
@@ -56,4 +157,51 @@ async fn main(spawner: Spawner) {
     let _ = spawner;
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
+}
+
+#[embassy_executor::task]
+async fn connection(mut controller: WifiController<'static>) {
+    log::info!("start connection task");
+    log::info!("Device capabilities: {:?}", controller.capabilities());
+    loop {
+        match esp_wifi::wifi::wifi_state() {
+            WifiState::StaConnected => {
+                // wait until we're no longer connected
+                controller.wait_for_event(WifiEvent::StaDisconnected).await;
+                Timer::after(Duration::from_millis(5000)).await
+            }
+            _ => {}
+        }
+        if !matches!(controller.is_started(), Ok(true)) {
+            let client_config = Configuration::Client(ClientConfiguration {
+                ssid: SSID.into(),
+                password: PASSWORD.into(),
+                ..Default::default()
+            });
+            controller.set_configuration(&client_config).unwrap();
+            log::info!("Starting wifi");
+            controller.start_async().await.unwrap();
+            log::info!("Wifi started!");
+
+            log::info!("Scan");
+            let result = controller.scan_n_async(10).await.unwrap();
+            for ap in result {
+                log::info!("{:?}", ap);
+            }
+        }
+        log::info!("About to connect...");
+
+        match controller.connect_async().await {
+            Ok(_) => log::info!("Wifi connected!"),
+            Err(e) => {
+                log::info!("Failed to connect to wifi: {e:?}");
+                Timer::after(Duration::from_millis(5000)).await
+            }
+        }
+    }
+}
+
+#[embassy_executor::task]
+async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
+    runner.run().await
 }
