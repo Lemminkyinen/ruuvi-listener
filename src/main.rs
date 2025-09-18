@@ -8,13 +8,12 @@
 
 mod scanner;
 mod schema;
+mod sender;
 
 use crate::schema::RuuviRawV2;
 use bt_hci::controller::ExternalController;
-use core::net::Ipv4Addr;
 use dotenvy_macro::dotenv;
 use embassy_executor::Spawner;
-use embassy_net::tcp::TcpSocket;
 use embassy_net::{Runner, StackResources};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::{Channel, Receiver};
@@ -46,6 +45,7 @@ macro_rules! mk_static {
 
 const SSID: &str = dotenv!("SSID");
 const PASSWORD: &str = dotenv!("PASSWORD");
+const AUTH_KEY: &str = dotenv!("AUTH_KEY");
 
 static CHANNEL: StaticCell<Channel<NoopRawMutex, RuuviRawV2, 16>> = StaticCell::new();
 
@@ -75,7 +75,7 @@ async fn main(spawner: Spawner) {
         esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller")
     );
 
-    let (wifi_controller, interfaces) = esp_wifi::wifi::new(&esp_wifi_ctrl, peripherals.WIFI)
+    let (wifi_controller, interfaces) = esp_wifi::wifi::new(esp_wifi_ctrl, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
 
     let wifi_interface = interfaces.sta;
@@ -93,9 +93,6 @@ async fn main(spawner: Spawner) {
     spawner.spawn(connection(wifi_controller)).ok();
     spawner.spawn(net_task(runner)).ok();
 
-    let mut rx_buffer = [0; 4096];
-    let mut tx_buffer = [0; 4096];
-
     loop {
         if stack.is_link_up() {
             break;
@@ -112,53 +109,9 @@ async fn main(spawner: Spawner) {
         Timer::after(Duration::from_millis(500)).await;
     }
 
-    if false {
-        unreachable!();
-        loop {
-            Timer::after(Duration::from_millis(1_000)).await;
-
-            let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-
-            socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
-
-            let remote_endpoint = (Ipv4Addr::new(142, 250, 185, 115), 80);
-            log::info!("connecting...");
-            let r = socket.connect(remote_endpoint).await;
-            if let Err(e) = r {
-                log::info!("connect error: {:?}", e);
-                continue;
-            }
-            log::info!("connected!");
-            let mut buf = [0; 1024];
-            loop {
-                use embedded_io_async::Write;
-                let r = socket
-                    .write_all(b"GET / HTTP/1.0\r\nHost: www.mobile-j.de\r\n\r\n")
-                    .await;
-                if let Err(e) = r {
-                    log::info!("write error: {:?}", e);
-                    break;
-                }
-                let n = match socket.read(&mut buf).await {
-                    Ok(0) => {
-                        log::info!("read EOF");
-                        break;
-                    }
-                    Ok(n) => n,
-                    Err(e) => {
-                        log::info!("read error: {:?}", e);
-                        break;
-                    }
-                };
-                log::info!("{}", core::str::from_utf8(&buf[..n]).unwrap());
-            }
-            Timer::after(Duration::from_millis(3000)).await;
-        }
-    }
-
     // Setup BLE
     // find more examples https://github.com/embassy-rs/trouble/tree/main/examples/esp32
-    let transport = BleConnector::new(&esp_wifi_ctrl, peripherals.BT);
+    let transport = BleConnector::new(esp_wifi_ctrl, peripherals.BT);
     let ble_controller: ExternalController<BleConnector<'static>, 20> =
         ExternalController::<_, 20>::new(transport);
 
@@ -167,13 +120,15 @@ async fn main(spawner: Spawner) {
     let sender = channel.sender();
     let receiver = channel.receiver();
 
+    // Run BLE ad scanner
     spawner
         .spawn(scanner::run(ble_controller, sender))
         .expect("Failed to spawn BLE scanner!");
 
+    // Run HTTP packet sender
     spawner
-        .spawn(channel_logger(receiver))
-        .expect("Failed to spawn channel logger!");
+        .spawn(sender::run(stack, receiver))
+        .expect("Failed to HTTP sender logger!");
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
 }
@@ -183,13 +138,10 @@ async fn connection(mut controller: WifiController<'static>) {
     log::info!("start connection task");
     log::info!("Device capabilities: {:?}", controller.capabilities());
     loop {
-        match esp_wifi::wifi::wifi_state() {
-            WifiState::StaConnected => {
-                // wait until we're no longer connected
-                controller.wait_for_event(WifiEvent::StaDisconnected).await;
-                Timer::after(Duration::from_millis(5000)).await
-            }
-            _ => {}
+        if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
+            // wait until we're no longer connected
+            controller.wait_for_event(WifiEvent::StaDisconnected).await;
+            Timer::after(Duration::from_millis(5000)).await
         }
         if !matches!(controller.is_started(), Ok(true)) {
             let client_config = Configuration::Client(ClientConfiguration {
@@ -205,7 +157,7 @@ async fn connection(mut controller: WifiController<'static>) {
             log::info!("Scan");
             let result = controller.scan_n_async(10).await.unwrap();
             for ap in result {
-                log::info!("{:?}", ap);
+                log::info!("{ap:?}");
             }
         }
         log::info!("About to connect...");

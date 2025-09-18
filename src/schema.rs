@@ -1,10 +1,12 @@
+use serde::Serialize;
+
 #[derive(Debug)]
 pub enum ParseError {
     TooShort,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct RuuviRawV2 {
     pub format: u8,           // 0
     pub temp: i16,            // 1-2

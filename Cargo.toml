@@ -72,6 +72,9 @@ trouble-host = { version = "0.2.0", features = ["gatt", "scan"] }
 heapless = "0.9.1"
 embassy-sync = "0.7.2"
 dotenvy_macro = "0.15.7"
+serde-json-core = "0.6.0"
+itoa = "1.0.15"
+serde = { version = "1.0.225", features = ["derive"], default-features = false}
 
 [profile.dev]
 # Rust debug is too slow.
