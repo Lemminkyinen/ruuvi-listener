@@ -12,11 +12,12 @@ mod schema;
 use crate::schema::RuuviRawV2;
 use bt_hci::controller::ExternalController;
 use core::net::Ipv4Addr;
+use dotenvy_macro::dotenv;
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::{Runner, StackResources};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::channel::{self, Channel, Receiver};
+use embassy_sync::channel::{Channel, Receiver};
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
@@ -43,8 +44,8 @@ macro_rules! mk_static {
     }};
 }
 
-const SSID: &str = env!("SSID");
-const PASSWORD: &str = env!("PASSWORD");
+const SSID: &str = dotenv!("SSID");
+const PASSWORD: &str = dotenv!("PASSWORD");
 
 static CHANNEL: StaticCell<Channel<NoopRawMutex, RuuviRawV2, 16>> = StaticCell::new();
 

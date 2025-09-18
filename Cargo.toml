@@ -71,6 +71,7 @@ static_cell = "2.1.1"
 trouble-host = { version = "0.2.0", features = ["gatt", "scan"] }
 heapless = "0.9.1"
 embassy-sync = "0.7.2"
+dotenvy_macro = "0.15.7"
 
 [profile.dev]
 # Rust debug is too slow.
