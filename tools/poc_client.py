@@ -1,41 +1,3 @@
-#!/usr/bin/env python3
-"""
-Ruuvi Gateway Protocol PoC Client (Python)
-
-Implements the custom TCP protocol expected by the provided Rust server:
-1. Handshake (52 bytes) with HMAC-SHA256 authenticity.
-2. Length‑prefixed frames: [LEN(4, BE)] [TYPE(1)] [PAYLOAD..]
-3. TYPE 0x01 = postcard-compatible Option<RuuviRawV2>
-   (we craft bytes manually to match postcard's fixed-size primitive encoding)
-4. TYPE 0x02 = Ping (no payload) -> expect ACK [0x03, 0x02]
-
-Postcard encoding assumptions used here:
-- Option<T>: 0x00 = None, 0x01 then T bytes = Some(T)
-- For a struct of fixed-size integer fields: each primitive emitted in little-endian order,
-  in declaration order. (Matches postcard behavior for fixed-size primitives.)
-
-RuuviRawV2 layout (sizes):
- format: u8
- temp: i16 (LE)
- humidity: u16 (LE)
- pressure: u16 (LE)
- acc_x: i16 (LE)
- acc_y: i16 (LE)
- acc_z: i16 (LE)
- power_info: u16 (LE)
- movement_counter: u8
- measurement_seq: u16 (LE)
- mac: [u8;6]
-Total = 24 bytes. Option wrapper adds 1 discriminant byte (0x01) => payload length 25.
-
-This script purposefully avoids external dependencies beyond the stdlib.
-
-USAGE EXAMPLES:
-  python ruuvi_poc_client.py --host 127.0.0.1 --auth-key "secret" --frames 3
-  python ruuvi_poc_client.py --host 192.168.1.100 --device-id DE:AD:BE:EF:00:01 --interval 2
-
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -47,8 +9,10 @@ import socket
 import struct
 import sys
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional
+
+from dotenv import load_dotenv
 
 MAGIC = b"RGW1"
 VERSION = 0x01
@@ -64,16 +28,16 @@ ERR_MARKER = 0x10
 @dataclass
 class RuuviRawV2:
     format: int = 0x05
-    temp: int = 215  # 21.5C * 10 maybe; adjust to your semantics
-    humidity: int = 4500  # 45.00% * 100
-    pressure: int = 10015  # 1001.5 hPa * 10
-    acc_x: int = 10
-    acc_y: int = -3
-    acc_z: int = 1024
-    power_info: int = 0xAA55
-    movement_counter: int = 7
-    measurement_seq: int = 1234
-    mac: bytes = bytes.fromhex("DEADBEEF0001")  # 6 bytes
+    temp: int = 4934
+    humidity: int = 19595
+    pressure: int = 49453
+    acc_x: int = 940
+    acc_y: int = 428
+    acc_z: int = 24
+    power_info: int = 23638
+    movement_counter: int = 250
+    measurement_seq: int = 9463
+    mac: bytes = bytes.fromhex("DEADBEEF0609")  # 6 bytes
 
     def to_postcard_some(self) -> bytes:
         """Serialize as postcard Option::Some(self)."""
@@ -96,7 +60,6 @@ class RuuviRawV2:
 
 
 def parse_device_id(s: str) -> bytes:
-    # Accept hex bytes separated by ':' or no separators.
     raw = s.replace(":", "").replace("-", "")
     if len(raw) != 12:
         raise ValueError("device id must be 6 bytes (12 hex chars)")
@@ -184,30 +147,33 @@ def send_ping(sock: socket.socket) -> None:
         print(f"[ping] unexpected={ack.hex()}")
 
 
-def main(argv: Optional[Iterable[str]] = None) -> int:
+def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Ruuvi Gateway PoC client")
-    p.add_argument("--host", required=True, help="Server host/IP")
+    p.add_argument("--host", default="127.0.0.1", help="Server host/IP")
     p.add_argument("--port", type=int, default=9090, help="Server port (default 9090)")
     p.add_argument("--auth-key", help="Shared AUTH_KEY (or AUTH_KEY env)")
     p.add_argument(
         "--device-id",
-        default="DE:AD:BE:EF:00:01",
-        help="6-byte device id hex (DE:AD:BE:EF:00:01)",
+        default="DE:AD:BE:EF:06:06",
+        help="6-byte device id hex (DE:AD:BE:EF:06:09)",
     )
     p.add_argument(
         "--frames", type=int, default=1, help="Number of data frames to send"
     )
     p.add_argument("--interval", type=float, default=2.0, help="Seconds between frames")
     p.add_argument("--ping", action="store_true", help="Send a ping before data frames")
-    args = p.parse_args(list(argv) if argv is not None else None)
+    return p.parse_args()
 
+
+def main(argv: Iterable[str] | None = None) -> int:
+    load_dotenv()
+    args = parse_args()
     auth_key = (args.auth_key or os.getenv("AUTH_KEY") or "").encode()
     if not auth_key:
         print("ERROR: Provide --auth-key or AUTH_KEY env", file=sys.stderr)
         return 2
 
     device_id = parse_device_id(args.device_id)
-
     ruuvi_sample = RuuviRawV2()
 
     addr = (args.host, args.port)
@@ -225,5 +191,5 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     raise SystemExit(main())
