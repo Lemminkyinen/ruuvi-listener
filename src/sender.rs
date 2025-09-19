@@ -1,180 +1,186 @@
 use crate::AUTH_KEY;
 use crate::schema::RuuviRawV2;
 use core::net::Ipv4Addr;
+use core::sync::atomic::{AtomicU32, Ordering};
 use embassy_net::{Stack, tcp::TcpSocket};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Receiver;
 use embassy_time::{Duration, Timer};
-use embedded_io_async::Write;
-use heapless::Vec;
-use serde_json_core::ser::to_slice;
+use embedded_io_async::{Read, Write};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
-// Configuration constants
+// --- Protocol constants ---
+const MAGIC: &[u8; 4] = b"RGW1";
+const VERSION: u8 = 1;
+// Flags you may later use (bit0 could mean compression, etc.)
+const FLAGS: u8 = 0x00;
+// Backoff and timeout settings
 const CONNECT_TIMEOUT_SECS: u64 = 10;
 const IO_TIMEOUT_SECS: u64 = 10;
 const MAX_BACKOFF_SECS: u64 = 30;
-const BASE_BACKOFF_MS: u64 = 500; // initial backoff after failure
+const BASE_BACKOFF_MS: u64 = 500;
+// Server address (TODO: make configurable)
+const SERVER_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 100);
+const SERVER_PORT: u16 = 9090;
 
-// Buffer sizing assumptions:
-// JSON: RuuviRawV2 ~ small (< 200 bytes) so 256 is enough.
-// HTTP headers + JSON body: enlarged header buffer to handle long AUTH_KEY values.
-type JsonBuf = Vec<u8, 256>;
-type HttpBuf = Vec<u8, 768>;
+// Device identity (6 bytes). For now static; replace with real MAC if available.
+const DEVICE_ID: [u8; 6] = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01];
 
-fn build_request(
-    packet: &RuuviRawV2,
-    json: &mut JsonBuf,
-    http: &mut HttpBuf,
-) -> Result<(), &'static str> {
-    json.clear();
-    http.clear();
+// We don't have 64-bit atomics on this target. Compose an 8-byte nonce from two 32-bit counters.
+static NONCE_LOW: AtomicU32 = AtomicU32::new(1);
+const NONCE_HIGH: u32 = 0xA5A5_0001; // fixed high word (could randomize at boot)
 
-    // Serialize JSON into temporary fixed buffer because serde_json_core::to_slice does not
-    // update a heapless::Vec's length when passed as &mut [u8].
-    let mut tmp = [0u8; 256];
-    let json_len = to_slice(packet, &mut tmp).map_err(|_| "json")?; // returns length written
-    if json_len > tmp.len() {
-        return Err("json_len");
-    }
-    if json.extend_from_slice(&tmp[..json_len]).is_err() {
-        return Err("json_overflow");
-    }
-
-    // Estimate required capacity to fail early (rough)
-    let estimated = 128 + AUTH_KEY.len() + json.len();
-    if estimated > http.capacity() {
-        return Err("http_capacity");
-    }
-
-    // Minimal persistent HTTP/1.1 request
-    http.extend_from_slice(b"POST /api/ruuvi HTTP/1.1\r\n")
-        .map_err(|_| "hdr")?;
-    http.extend_from_slice(b"Host: 192.168.1.100:8080\r\n") // match actual server IP
-        .map_err(|_| "hdr")?;
-    http.extend_from_slice(b"Connection: keep-alive\r\n")
-        .map_err(|_| "hdr")?;
-    http.extend_from_slice(b"Content-Type: application/json\r\n")
-        .map_err(|_| "hdr")?;
-    http.extend_from_slice(b"Authorization: ")
-        .map_err(|_| "hdr")?;
-    http.extend_from_slice(AUTH_KEY.as_bytes())
-        .map_err(|_| "auth")?;
-    http.extend_from_slice(b"\r\n").map_err(|_| "hdr")?;
-
-    let mut itoa_buf = itoa::Buffer::new();
-    let len_str = itoa_buf.format(json.len());
-    http.extend_from_slice(b"Content-Length: ")
-        .map_err(|_| "hdr")?;
-    http.extend_from_slice(len_str.as_bytes())
-        .map_err(|_| "hdr")?;
-    http.extend_from_slice(b"\r\n\r\n").map_err(|_| "hdr")?;
-    http.extend_from_slice(json.as_slice())
-        .map_err(|_| "body")?;
-    Ok(())
+// Serialize Option<RuuviRawV2> with postcard into a temporary vec.
+fn serialize_packet(pkt: RuuviRawV2, buf: &mut alloc::vec::Vec<u8>) -> Result<(), ()> {
+    buf.clear();
+    // Serialize Option<RuuviRawV2>
+    postcard::to_allocvec(&Some(pkt)).map_err(|_| ()).map(|v| {
+        buf.extend_from_slice(&v);
+    })
 }
 
-// Parse just the status line (e.g. HTTP/1.1 200 OK) from the beginning of the response buffer.
-fn parse_status_line(buf: &[u8]) -> Option<u16> {
-    // Find end of first line
-    let mut end = None;
-    for i in 0..buf.len().min(64) {
-        // limit search
-        if i + 1 < buf.len() && buf[i] == b'\r' && buf[i + 1] == b'\n' {
-            end = Some(i);
-            break;
+// Build handshake (52 bytes) in provided buffer.
+fn build_handshake(buf: &mut [u8; 52]) {
+    buf.fill(0);
+    // Layout: MAGIC(0..4) | VER(4) | FLAGS(5) | DEV(6..12) | NONCE(12..20) | HMAC(20..52)
+    buf[0..4].copy_from_slice(MAGIC);
+    buf[4] = VERSION;
+    buf[5] = FLAGS;
+    buf[6..12].copy_from_slice(&DEVICE_ID);
+    let low = NONCE_LOW.fetch_add(1, Ordering::Relaxed);
+    let nonce_u64: u64 = ((NONCE_HIGH as u64) << 32) | (low as u64);
+    buf[12..20].copy_from_slice(&nonce_u64.to_be_bytes());
+    // HMAC over first 20 bytes
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(AUTH_KEY.as_bytes()).unwrap();
+    mac.update(&buf[0..20]);
+    let tag = mac.finalize().into_bytes();
+    buf[20..52].copy_from_slice(&tag);
+}
+
+async fn send_handshake<S: Write + Read + Unpin>(sock: &mut S) -> Result<(), &'static str> {
+    let mut hs = [0u8; 52];
+    build_handshake(&mut hs);
+    sock.write_all(&hs).await.map_err(|_| "hs_write")?;
+    // Expect single byte accept (0x01) or error codes (0xFF/0xFE/0xFD)
+    let mut resp = [0u8; 1];
+    sock.read_exact(&mut resp).await.map_err(|_| "hs_read")?;
+    match resp[0] {
+        0x01 => Ok(()),
+        0xFF => Err("bad_magic"),
+        0xFE => Err("bad_ver"),
+        0xFD => Err("bad_hmac"),
+        _ => Err("unknown_hs_code"),
+    }
+}
+
+async fn send_frame<S: Write + Read + Unpin>(
+    sock: &mut S,
+    ftype: u8,
+    payload: &[u8],
+) -> Result<(), &'static str> {
+    let total_len = 1usize + payload.len();
+    if total_len > 64 * 1024 {
+        return Err("oversize");
+    }
+    let hdr = (total_len as u32).to_be_bytes();
+    sock.write_all(&hdr).await.map_err(|_| "len_write")?;
+    sock.write_all(&[ftype]).await.map_err(|_| "type_write")?;
+    if !payload.is_empty() {
+        sock.write_all(payload).await.map_err(|_| "pl_write")?;
+    }
+    // Expect exactly 2-byte response: [0x03,code] (ack) or [0x10,code] (error)
+    let mut ack = [0u8; 2];
+    if sock.read_exact(&mut ack).await.is_err() {
+        return Err("ack_read");
+    }
+    match ack[0] {
+        0x03 => {
+            // success kinds: 0x01 data ack, 0x02 ping ack
+            // we don't differentiate further here
+            Ok(())
+        }
+        0x10 => {
+            // error marker -> log code and treat as failure (forces reconnect)
+            log::warn!("Server error code=0x{:02X}", ack[1]);
+            Err("server_error")
+        }
+        _ => {
+            log::warn!("Unexpected ack header byte=0x{:02X}", ack[0]);
+            Err("bad_ack")
         }
     }
-    let end = end?;
-    let line = &buf[..end];
-    // Expect format: HTTP/1.x <code>
-    // Split by space
-    let mut parts_iter = line.split(|b| *b == b' ');
-    let _http = parts_iter.next()?;
-    let code = parts_iter.next()?;
-    if code.len() == 3 {
-        let d0 = (code[0] as char).to_digit(10)? as u16;
-        let d1 = (code[1] as char).to_digit(10)? as u16;
-        let d2 = (code[2] as char).to_digit(10)? as u16;
-        return Some(d0 * 100 + d1 * 10 + d2);
-    }
-    None
 }
 
 #[embassy_executor::task]
 pub async fn run(stack: Stack<'static>, receiver: Receiver<'static, NoopRawMutex, RuuviRawV2, 16>) {
+    use alloc::vec;
+    use alloc::vec::Vec as AVec;
+
     let mut rx_buffer = [0; 2048];
     let mut tx_buffer = [0; 2048];
-
-    let server_ip = Ipv4Addr::new(192, 168, 1, 100); // TODO: make configurable
-    let server_port = 8080;
-    let socket_address = (server_ip, server_port);
-
     let mut backoff_ms = BASE_BACKOFF_MS;
+    let server = (SERVER_IP, SERVER_PORT);
 
     // Reusable buffers
-    let mut json_buf: JsonBuf = Vec::new();
-    let mut http_buf: HttpBuf = Vec::new();
-    let mut resp_buf = [0u8; 256];
+    let mut ser_buf: AVec<u8> = vec![0u8; 0];
+    let mut last_ping = embassy_time::Instant::now();
 
     loop {
-        // OUTER LOOP: establish (or re-establish) a TCP connection.
-        log::info!("Connecting to server...");
+        log::info!("Connecting (proto) to {SERVER_IP:?}:{SERVER_PORT}...");
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(CONNECT_TIMEOUT_SECS)));
-        match socket.connect(socket_address).await {
+        match socket.connect(server).await {
             Ok(_) => {
-                log::info!("Connected");
-                backoff_ms = BASE_BACKOFF_MS; // reset backoff after successful connect
+                log::info!("TCP connected");
             }
             Err(e) => {
-                log::warn!("Connect failed: {e:?}, backoff {backoff_ms}ms");
+                log::warn!("Connect error: {e:?}; backoff {backoff_ms}ms");
                 Timer::after(Duration::from_millis(backoff_ms)).await;
                 backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_SECS * 1000);
-                continue; // retry connect
+                continue;
             }
         }
 
-        // INNER LOOP: reuse the same socket for multiple packets until an IO error occurs.
+        socket.set_timeout(Some(Duration::from_secs(IO_TIMEOUT_SECS)));
+        match send_handshake(&mut socket).await {
+            Ok(_) => {
+                log::info!("Handshake OK");
+                backoff_ms = BASE_BACKOFF_MS; // reset after success
+            }
+            Err(err) => {
+                log::warn!("Handshake failed: {err}; reconnecting");
+                // short delay then restart outer loop
+                Timer::after(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_SECS * 1000);
+                continue;
+            }
+        }
+
+        // Frame sending loop
         loop {
-            // Wait for next packet from channel (blocking)
             receiver.ready_to_receive().await;
-            let packet = receiver.receive().await;
-
-            if let Err(reason) = build_request(&packet, &mut json_buf, &mut http_buf) {
-                log::warn!(
-                    "Failed to build HTTP request: {reason} (json_len={}, auth_len={})",
-                    json_buf.len(),
-                    AUTH_KEY.len()
-                );
-                continue; // skip this packet but keep connection
+            let pkt = receiver.receive().await;
+            if serialize_packet(pkt, &mut ser_buf).is_err() {
+                log::warn!("Serialize failed");
+                continue;
             }
-
-            socket.set_timeout(Some(Duration::from_secs(IO_TIMEOUT_SECS)));
-            if let Err(e) = socket.write_all(http_buf.as_slice()).await {
-                log::warn!("Write failed: {e:?}");
-                break; // break inner loop -> drop socket -> reconnect
-            }
-
-            match socket.read(&mut resp_buf).await {
-                Ok(0) => {
-                    log::warn!("Server closed (EOF)");
+            // Periodic ping (every ~60s) to keep connection fresh (optional)
+            if last_ping.elapsed().as_secs() >= 60 {
+                if let Err(e) = send_frame(&mut socket, 0x02, &[]).await {
+                    log::warn!("Ping failed: {e}");
                     break;
                 }
-                Ok(n) => {
-                    if let Some(code) = parse_status_line(&resp_buf[..n]) {
-                        log::info!("HTTP status: {code}");
-                    } else {
-                        log::info!("Resp {n} bytes");
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Read error: {e:?}");
-                    break;
-                }
+                last_ping = embassy_time::Instant::now();
+            }
+
+            if let Err(e) = send_frame(&mut socket, 0x01, &ser_buf).await {
+                log::warn!("Frame send error: {e}");
+                break; // break frame loop -> reconnect
             }
         }
 
-        // Connection ended; wait with backoff then reconnect.
         log::info!("Reconnecting after backoff {backoff_ms}ms");
         Timer::after(Duration::from_millis(backoff_ms)).await;
         backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_SECS * 1000);
