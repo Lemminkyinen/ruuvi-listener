@@ -7,14 +7,27 @@ env:
 # erase:
 # 	espflash erase-flash --port /dev/ttyACM0
 
-# check:
-# 	cargo check --release
-
 # flash:
 # 	espflash flash --port /dev/ttyACM0 --chip esp32s3 target/xtensa-esp32s3-none-elf/release/ruuvi-listener
 
 # monitor:
 # 	cargo espflash monitor --port /dev/ttyACM0 --baud 115200
+
+check-common:
+	@echo "Check ruuvi-common:"
+	@cargo check -r -p ruuvi-common
+
+check-gateway:
+	@echo "Check ruuvi-gateway:"
+	@cargo check -r -p ruuvi-gateway
+
+check-listener:
+	@echo "Check ruuvi-listener"
+	@cargo +esp check -p ruuvi-listener \
+		--config ruuvi-listener/.cargo/config.toml \
+		--profile ruuvi-listener-release \
+
+check: check-common check-gateway check-listener
 
 build-common:
 	@echo "Build ruuvi-common:"
