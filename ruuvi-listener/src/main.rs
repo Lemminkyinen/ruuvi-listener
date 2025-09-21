@@ -39,6 +39,10 @@ macro_rules! mk_static {
 
 static CHANNEL: StaticCell<Channel<NoopRawMutex, RuuviRawV2, 16>> = StaticCell::new();
 
+// Constant configs
+const WIFI_CONFIG: WifiConfig = WifiConfig::new();
+const BLE_CONFIG: GatewayConfig = GatewayConfig::new();
+
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
@@ -46,14 +50,8 @@ async fn main(spawner: Spawner) {
     let mut board_config = board::init();
     let (stack, runner) = net::init_network_stack(&mut board_config);
 
-    let wifi_config = WifiConfig::new();
-    let _ble_config = GatewayConfig::new().unwrap_or_else(|err| {
-        log::error!("Failed to parse gateway config from .env: {err:?}");
-        panic!();
-    });
-
     spawner
-        .spawn(net::connection(board_config.wifi_controller, wifi_config))
+        .spawn(net::connection(board_config.wifi_controller, WIFI_CONFIG))
         .expect("Network connection failed!");
     spawner
         .spawn(net::run_stack(runner))

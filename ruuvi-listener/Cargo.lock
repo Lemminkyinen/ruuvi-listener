@@ -128,6 +128,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "const-str"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4d34b8f066904ed7cfa4a6f9ee96c3214aa998cb44b69ca20bd2054f47402ed"
+
+[[package]]
 name = "convert_case"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1444,6 +1450,7 @@ name = "ruuvi-listener"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
+ "const-str",
  "critical-section",
  "dotenvy_macro",
  "embassy-executor",

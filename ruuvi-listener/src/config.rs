@@ -1,10 +1,5 @@
-use core::{
-    net::{AddrParseError, Ipv4Addr},
-    num::ParseIntError,
-    str::FromStr,
-};
-
 use bt_hci::controller::ExternalController;
+use core::net::Ipv4Addr;
 use dotenvy_macro::dotenv;
 use esp_hal::rng::Rng;
 use esp_wifi::ble::controller::BleConnector;
@@ -22,7 +17,7 @@ pub struct WifiConfig {
 }
 
 impl WifiConfig {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             ssid: SSID,
             password: PASSWORD,
@@ -37,32 +32,14 @@ pub struct GatewayConfig {
 }
 
 impl GatewayConfig {
-    pub fn new() -> Result<Self, ConfigParseError> {
-        let ip = Ipv4Addr::from_str(GATEWAY_IP)?;
-        let port = u16::from_str(GATEWAY_PORT)?;
-        Ok(Self {
+    pub const fn new() -> Self {
+        let ip = const_str::ip_addr!(v4, GATEWAY_IP);
+        let port = const_str::parse!(GATEWAY_PORT, u16);
+        Self {
             ip,
             port,
             auth: AUTH_KEY,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub enum ConfigParseError {
-    Addr(AddrParseError),
-    Port(ParseIntError),
-}
-
-impl From<AddrParseError> for ConfigParseError {
-    fn from(e: AddrParseError) -> Self {
-        Self::Addr(e)
-    }
-}
-
-impl From<ParseIntError> for ConfigParseError {
-    fn from(e: ParseIntError) -> Self {
-        Self::Port(e)
+        }
     }
 }
 
