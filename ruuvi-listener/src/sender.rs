@@ -13,21 +13,21 @@ use sha2::Sha256;
 // --- Protocol constants ---
 const MAGIC: &[u8; 4] = b"RGW1";
 const VERSION: u8 = 1;
-// Flags you may later use (bit0 could mean compression, etc.)
+// Flags for later use (bit0 could mean compression, etc.)
 const FLAGS: u8 = 0x00;
 // Backoff and timeout settings
 const CONNECT_TIMEOUT_SECS: u64 = 10;
 const IO_TIMEOUT_SECS: u64 = 10;
 const MAX_BACKOFF_SECS: u64 = 30;
 const BASE_BACKOFF_MS: u64 = 500;
-// Server address (TODO: make configurable)
+// Server address
 const SERVER_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 100);
 const SERVER_PORT: u16 = 9090;
 
-// Device identity (6 bytes). For now static; replace with real MAC if available.
+// Device identity (6 bytes)
 const DEVICE_ID: [u8; 6] = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01];
 
-// We don't have 64-bit atomics on this target. Compose an 8-byte nonce from two 32-bit counters.
+// Compose an 8-byte nonce from two 32-bit counters.
 static NONCE_LOW: AtomicU32 = AtomicU32::new(1);
 const NONCE_HIGH: u32 = 0xA5A5_0001; // fixed high word (could randomize at boot)
 

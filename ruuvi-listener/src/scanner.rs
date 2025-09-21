@@ -1,7 +1,6 @@
 use crate::schema::RuuviRawV2;
 use bt_hci::param::LeAdvEventKind;
 use bt_hci::param::LeAdvReport;
-use core::fmt::Write;
 use embassy_futures::join::join;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Sender;
@@ -93,22 +92,4 @@ fn is_ruuvi_report(report: LeAdvReport<'_>) -> bool {
         && report.event_kind == LeAdvEventKind::AdvInd
         && report.data.len() >= 7
         && report.data[5..7] == RUUVI_MAN_ID
-}
-
-fn _to_be_mac(data: &[u8]) -> [u8; 6] {
-    let mut be_mac_address = [0x0u8; 6];
-    be_mac_address.copy_from_slice(data);
-    be_mac_address.reverse();
-    be_mac_address
-}
-
-fn _addr_to_hex(addr: &[u8]) -> heapless::String<18> {
-    let mut s = heapless::String::<18>::new(); // 17 chars + null terminator
-    for (i, byte) in addr.iter().enumerate() {
-        write!(s, "{byte:02X}").unwrap();
-        if i != addr.len() - 1 {
-            s.push(':').unwrap();
-        }
-    }
-    s
 }
