@@ -4,7 +4,11 @@ use core::{
     str::FromStr,
 };
 
+use bt_hci::controller::ExternalController;
 use dotenvy_macro::dotenv;
+use esp_hal::rng::Rng;
+use esp_wifi::ble::controller::BleConnector;
+use esp_wifi::wifi::{Interfaces, WifiController};
 
 pub const SSID: &str = dotenv!("SSID");
 pub const PASSWORD: &str = dotenv!("PASSWORD");
@@ -13,30 +17,38 @@ pub const GATEWAY_PORT: &str = dotenv!("GATEWAY_PORT");
 pub const AUTH_KEY: &str = dotenv!("AUTH_KEY");
 
 pub struct WifiConfig {
-    ssid: &'static str,
-    password: &'static str,
+    pub ssid: &'static str,
+    pub password: &'static str,
 }
 
 impl WifiConfig {
-    pub fn new(ssid: &'static str, password: &'static str) -> Self {
-        Self { ssid, password }
+    pub fn new() -> Self {
+        Self {
+            ssid: SSID,
+            password: PASSWORD,
+        }
     }
 }
 
 pub struct GatewayConfig {
-    ip: Ipv4Addr,
-    port: u16,
-    auth: &'static str,
+    pub ip: Ipv4Addr,
+    pub port: u16,
+    pub auth: &'static str,
 }
 
 impl GatewayConfig {
-    fn new(ip: &str, port: &str, auth: &'static str) -> Result<Self, ConfigParseError> {
-        let ip = Ipv4Addr::from_str(ip)?;
-        let port = u16::from_str(port)?;
-        Ok(Self { ip, port, auth })
+    pub fn new() -> Result<Self, ConfigParseError> {
+        let ip = Ipv4Addr::from_str(GATEWAY_IP)?;
+        let port = u16::from_str(GATEWAY_PORT)?;
+        Ok(Self {
+            ip,
+            port,
+            auth: AUTH_KEY,
+        })
     }
 }
 
+#[derive(Debug)]
 pub enum ConfigParseError {
     Addr(AddrParseError),
     Port(ParseIntError),
@@ -51,5 +63,28 @@ impl From<AddrParseError> for ConfigParseError {
 impl From<ParseIntError> for ConfigParseError {
     fn from(e: ParseIntError) -> Self {
         Self::Port(e)
+    }
+}
+
+pub struct BoardConfig {
+    pub rng: Rng,
+    pub wifi_controller: WifiController<'static>,
+    pub interfaces: Option<Interfaces<'static>>,
+    pub ble_controller: ExternalController<BleConnector<'static>, 20>,
+}
+
+impl BoardConfig {
+    pub fn new(
+        rng: Rng,
+        wifi_controller: WifiController<'static>,
+        interfaces: Interfaces<'static>,
+        ble_controller: ExternalController<BleConnector<'static>, 20>,
+    ) -> Self {
+        Self {
+            rng,
+            wifi_controller,
+            interfaces: Some(interfaces),
+            ble_controller,
+        }
     }
 }
