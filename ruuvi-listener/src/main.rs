@@ -18,7 +18,7 @@ use crate::config::{GatewayConfig, WifiConfig};
 use crate::schema::RuuviRawV2;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::channel::{Channel, Receiver};
+use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use static_cell::StaticCell;
@@ -83,19 +83,8 @@ async fn main(spawner: Spawner) {
         .spawn(scanner::run(board_config.ble_controller, sender))
         .expect("Failed to spawn BLE scanner!");
 
-    // Run HTTP packet sender
+    // Run TCP packet sender
     spawner
         .spawn(sender::run(stack, receiver))
         .expect("Failed to HTTP sender logger!");
-
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
-}
-
-#[embassy_executor::task]
-async fn channel_logger(receiver: Receiver<'static, NoopRawMutex, RuuviRawV2, 16>) {
-    loop {
-        receiver.ready_to_receive().await;
-        let value = receiver.receive().await;
-        log::info!("{value:?}");
-    }
 }
