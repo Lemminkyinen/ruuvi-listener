@@ -1,4 +1,4 @@
-use crate::AUTH_KEY;
+use crate::config::AUTH_KEY;
 use crate::schema::RuuviRawV2;
 use core::net::Ipv4Addr;
 use core::sync::atomic::{AtomicU32, Ordering};

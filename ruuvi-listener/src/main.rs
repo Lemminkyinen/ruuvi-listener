@@ -6,13 +6,15 @@
     holding buffers for the duration of a data transfer."
 )]
 
+mod config;
 mod scanner;
 mod schema;
 mod sender;
 
+extern crate alloc;
+use crate::config::{PASSWORD, SSID};
 use crate::schema::RuuviRawV2;
 use bt_hci::controller::ExternalController;
-use dotenvy_macro::dotenv;
 use embassy_executor::Spawner;
 use embassy_net::{Runner, StackResources};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -28,7 +30,6 @@ use esp_wifi::wifi::{
     ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState,
 };
 use static_cell::StaticCell;
-extern crate alloc;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -42,10 +43,6 @@ macro_rules! mk_static {
         x
     }};
 }
-
-const SSID: &str = dotenv!("SSID");
-const PASSWORD: &str = dotenv!("PASSWORD");
-const AUTH_KEY: &str = dotenv!("AUTH_KEY");
 
 static CHANNEL: StaticCell<Channel<NoopRawMutex, RuuviRawV2, 16>> = StaticCell::new();
 
