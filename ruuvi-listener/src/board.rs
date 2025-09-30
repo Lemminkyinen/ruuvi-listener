@@ -5,6 +5,9 @@ use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
 use esp_wifi::EspWifiController;
 use esp_wifi::ble::controller::BleConnector;
+use static_cell::StaticCell;
+
+static ESP_WIFI_CONTROLLER: StaticCell<EspWifiController<'static>> = StaticCell::new();
 
 pub fn init() -> BoardConfig {
     // find more examples https://github.com/embassy-rs/trouble/tree/main/examples/esp32
@@ -30,9 +33,8 @@ pub fn init() -> BoardConfig {
     let rng = esp_hal::rng::Rng::new(peripherals.RNG);
     log::info!("RNG initialized!");
 
-    let esp_wifi_ctrl = &*crate::mk_static!(
-        EspWifiController<'static>,
-        esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller")
+    let esp_wifi_ctrl = ESP_WIFI_CONTROLLER.init(
+        esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller"),
     );
     let (wifi_controller, interfaces) = esp_wifi::wifi::new(esp_wifi_ctrl, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
