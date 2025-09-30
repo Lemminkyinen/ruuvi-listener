@@ -65,7 +65,6 @@ pub async fn run_stack(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await
 }
 
-#[embassy_executor::task]
 pub async fn acquire_address(stack: Stack<'static>) {
     loop {
         if stack.is_link_up() {

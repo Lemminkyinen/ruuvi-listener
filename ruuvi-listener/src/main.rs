@@ -46,9 +46,8 @@ async fn main(spawner: Spawner) {
     spawner
         .spawn(net::run_stack(runner))
         .expect("Failed to spawn network runner task!");
-    spawner
-        .spawn(acquire_address(stack))
-        .expect("Failed to spawn acquire address task!");
+
+    acquire_address(stack).await;
 
     // Initialize a bounded channel of Ruuvi packets
     let channel = &*CHANNEL.init(Channel::new());
