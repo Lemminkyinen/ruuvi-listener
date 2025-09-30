@@ -27,13 +27,17 @@ const DEVICE_ID: [u8; 6] = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01];
 static NONCE_LOW: AtomicU32 = AtomicU32::new(1);
 const NONCE_HIGH: u32 = 0xA5A5_0001; // fixed high word (could randomize at boot)
 
-// Serialize Option<RuuviRawV2> with postcard into a temporary vec.
+// Serialize RuuviRawV2 with postcard into a temporary vec.
 fn serialize_packet(pkt: RuuviRawV2, buf: &mut alloc::vec::Vec<u8>) -> Result<(), ()> {
     buf.clear();
-    // Serialize Option<RuuviRawV2>
-    postcard::to_allocvec(&pkt).map_err(|_| ()).map(|v| {
-        buf.extend_from_slice(&v);
-    })
+    // Serialize RuuviRawV2
+    postcard::to_allocvec(&pkt)
+        .map_err(|e| {
+            log::error!("Failed to serialize RuuviRawV2 {e:?}");
+        })
+        .map(|v| {
+            buf.extend_from_slice(&v);
+        })
 }
 
 // Build handshake (52 bytes) in provided buffer.
@@ -84,10 +88,19 @@ async fn send_frame<S: Write + Read + Unpin>(
         return Err("oversize");
     }
     let hdr = (total_len as u32).to_be_bytes();
-    sock.write_all(&hdr).await.map_err(|_| "len_write")?;
-    sock.write_all(&[ftype]).await.map_err(|_| "type_write")?;
+    sock.write_all(&hdr).await.map_err(|e| {
+        log::warn!("len_write failed: {e:?}");
+        "len_write"
+    })?;
+    sock.write_all(&[ftype]).await.map_err(|e| {
+        log::warn!("type_write failed: {e:?}");
+        "type_write"
+    })?;
     if !payload.is_empty() {
-        sock.write_all(payload).await.map_err(|_| "pl_write")?;
+        sock.write_all(payload).await.map_err(|e| {
+            log::warn!("payload_write failed: {e:?}");
+            "pl_write"
+        })?;
     }
     // Expect exactly 2-byte response: [0x03,code] (ack) or [0x10,code] (error)
     let mut ack = [0u8; 2];
