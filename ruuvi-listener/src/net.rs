@@ -64,3 +64,23 @@ pub async fn connection(mut controller: WifiController<'static>, config: WifiCon
 pub async fn run_stack(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await
 }
+
+#[embassy_executor::task]
+pub async fn acquire_address(stack: Stack<'static>) {
+    loop {
+        if stack.is_link_up() {
+            log::info!("Network stack link is up!");
+            break;
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+
+    log::info!("Getting an IP address...");
+    loop {
+        if let Some(config) = stack.config_v4() {
+            log::info!("Got IP: {}", config.address);
+            break;
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+}

@@ -15,11 +15,11 @@ mod sender;
 
 extern crate alloc;
 use crate::config::{GatewayConfig, WifiConfig};
+use crate::net::acquire_address;
 use crate::schema::RuuviRawV2;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use static_cell::StaticCell;
 
@@ -42,26 +42,13 @@ async fn main(spawner: Spawner) {
 
     spawner
         .spawn(net::connection(board_config.wifi_controller, WIFI_CONFIG))
-        .expect("Network connection failed!");
+        .expect("Failed to spawn network connection task!");
     spawner
         .spawn(net::run_stack(runner))
-        .expect("Net runner failed!");
-
-    loop {
-        if stack.is_link_up() {
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
-    }
-
-    log::info!("Waiting to get IP address...");
-    loop {
-        if let Some(config) = stack.config_v4() {
-            log::info!("Got IP: {}", config.address);
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
-    }
+        .expect("Failed to spawn network runner task!");
+    spawner
+        .spawn(acquire_address(stack))
+        .expect("Failed to spawn acquire address task!");
 
     // Initialize a bounded channel of Ruuvi packets
     let channel = &*CHANNEL.init(Channel::new());
