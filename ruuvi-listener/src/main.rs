@@ -31,7 +31,7 @@ static CHANNEL: StaticCell<Channel<NoopRawMutex, RuuviRawV2, 16>> = StaticCell::
 
 // Constant configs
 const WIFI_CONFIG: WifiConfig = WifiConfig::new();
-const BLE_CONFIG: GatewayConfig = GatewayConfig::new();
+const GATEWAY_CONFIG: GatewayConfig = GatewayConfig::new();
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -62,6 +62,6 @@ async fn main(spawner: Spawner) {
 
     // Run TCP packet sender
     spawner
-        .spawn(sender::run(stack, receiver))
+        .spawn(sender::run(stack, receiver, GATEWAY_CONFIG))
         .expect("Failed to HTTP sender logger!");
 }

@@ -1,6 +1,5 @@
-use crate::config::AUTH_KEY;
+use crate::config::GatewayConfig;
 use crate::schema::RuuviRawV2;
-use core::net::Ipv4Addr;
 use core::sync::atomic::{AtomicU32, Ordering};
 use embassy_net::{Stack, tcp::TcpSocket};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -20,11 +19,8 @@ const CONNECT_TIMEOUT_SECS: u64 = 10;
 const IO_TIMEOUT_SECS: u64 = 10;
 const MAX_BACKOFF_SECS: u64 = 30;
 const BASE_BACKOFF_MS: u64 = 500;
-// Server address
-const SERVER_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 100);
-const SERVER_PORT: u16 = 9090;
 
-// Device identity (6 bytes)
+// Device identity
 const DEVICE_ID: [u8; 6] = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01];
 
 // Compose an 8-byte nonce from two 32-bit counters.
@@ -41,7 +37,7 @@ fn serialize_packet(pkt: RuuviRawV2, buf: &mut alloc::vec::Vec<u8>) -> Result<()
 }
 
 // Build handshake (52 bytes) in provided buffer.
-fn build_handshake(buf: &mut [u8; 52]) {
+fn build_handshake(buf: &mut [u8; 52], auth_key: &'static str) {
     buf.fill(0);
     // Layout: MAGIC(0..4) | VER(4) | FLAGS(5) | DEV(6..12) | NONCE(12..20) | HMAC(20..52)
     buf[0..4].copy_from_slice(MAGIC);
@@ -53,15 +49,18 @@ fn build_handshake(buf: &mut [u8; 52]) {
     buf[12..20].copy_from_slice(&nonce_u64.to_be_bytes());
     // HMAC over first 20 bytes
     type HmacSha256 = Hmac<Sha256>;
-    let mut mac = HmacSha256::new_from_slice(AUTH_KEY.as_bytes()).unwrap();
+    let mut mac = HmacSha256::new_from_slice(auth_key.as_bytes()).unwrap();
     mac.update(&buf[0..20]);
     let tag = mac.finalize().into_bytes();
     buf[20..52].copy_from_slice(&tag);
 }
 
-async fn send_handshake<S: Write + Read + Unpin>(sock: &mut S) -> Result<(), &'static str> {
+async fn send_handshake<S: Write + Read + Unpin>(
+    sock: &mut S,
+    auth_key: &'static str,
+) -> Result<(), &'static str> {
     let mut hs = [0u8; 52];
-    build_handshake(&mut hs);
+    build_handshake(&mut hs, auth_key);
     sock.write_all(&hs).await.map_err(|_| "hs_write")?;
     // Expect single byte accept (0x01) or error codes (0xFF/0xFE/0xFD)
     let mut resp = [0u8; 1];
@@ -114,21 +113,29 @@ async fn send_frame<S: Write + Read + Unpin>(
 }
 
 #[embassy_executor::task]
-pub async fn run(stack: Stack<'static>, receiver: Receiver<'static, NoopRawMutex, RuuviRawV2, 16>) {
+pub async fn run(
+    stack: Stack<'static>,
+    receiver: Receiver<'static, NoopRawMutex, RuuviRawV2, 16>,
+    gateway_config: GatewayConfig,
+) {
     use alloc::vec;
     use alloc::vec::Vec as AVec;
 
     let mut rx_buffer = [0; 2048];
     let mut tx_buffer = [0; 2048];
     let mut backoff_ms = BASE_BACKOFF_MS;
-    let server = (SERVER_IP, SERVER_PORT);
+    let server = (gateway_config.ip, gateway_config.port);
 
     // Reusable buffers
     let mut ser_buf: AVec<u8> = vec![0u8; 0];
     let mut last_ping = embassy_time::Instant::now();
 
     loop {
-        log::info!("Connecting (proto) to {SERVER_IP:?}:{SERVER_PORT}...");
+        log::info!(
+            "Connecting (proto) to {:?}:{}...",
+            gateway_config.ip,
+            gateway_config.port
+        );
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(CONNECT_TIMEOUT_SECS)));
         match socket.connect(server).await {
@@ -144,7 +151,7 @@ pub async fn run(stack: Stack<'static>, receiver: Receiver<'static, NoopRawMutex
         }
 
         socket.set_timeout(Some(Duration::from_secs(IO_TIMEOUT_SECS)));
-        match send_handshake(&mut socket).await {
+        match send_handshake(&mut socket, gateway_config.auth).await {
             Ok(_) => {
                 log::info!("Handshake OK");
                 backoff_ms = BASE_BACKOFF_MS; // reset after success
