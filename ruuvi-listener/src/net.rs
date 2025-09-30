@@ -5,6 +5,9 @@ use esp_backtrace as _;
 use esp_wifi::wifi::{
     ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState,
 };
+use static_cell::StaticCell;
+
+static STACK_RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
 
 pub fn init_network_stack(
     board_config: &mut BoardConfig,
@@ -13,7 +16,7 @@ pub fn init_network_stack(
     let wifi_interface = board_config.interfaces.take().expect("No interface!").sta;
     let config = embassy_net::Config::dhcpv4(Default::default());
     let seed = (board_config.rng.random() as u64) << 32 | board_config.rng.random() as u64;
-    let stack_resources = crate::mk_static!(StackResources<3>, StackResources::<3>::new());
+    let stack_resources = STACK_RESOURCES.init(StackResources::new());
     let stack_n_runner = embassy_net::new(wifi_interface, config, stack_resources, seed);
     log::info!("Network stack initialized!");
     stack_n_runner
