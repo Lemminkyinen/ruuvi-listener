@@ -72,6 +72,10 @@ impl EventHandler for Handler {
                 // Ruuvitag v2 raw data starts at index 7
                 match RuuviRawV2::from_bytes(&report.data[7..]) {
                     Ok(parsed) => {
+                        if self.sender.is_full() {
+                            self.sender.clear();
+                            log::warn!("Channel full. Clearing channel for new data!");
+                        }
                         // Send data to the channel
                         if let Err(err) = self.sender.try_send(parsed) {
                             log::error!("Failed to send RuuviRawV2 to the channel! {err:?}");
