@@ -12,30 +12,27 @@ const CONNECTIONS_MAX: usize = 1;
 const L2CAP_CHANNELS_MAX: usize = 1;
 const RUUVI_MAN_ID: [u8; 2] = [0x99, 0x04];
 
-// C: Controller + ControllerCmdSync<LeSetScanParams>,
 #[embassy_executor::task]
 pub async fn run(
     controller: ExternalController<BleConnector<'static>, 20>,
     sender: Sender<'static, NoopRawMutex, RuuviRawV2, 16>,
 ) {
-    // Using a fixed "random" address can be useful for testing. In real scenarios, one would
-    // use e.g. the MAC 6 byte array as the address (how to get that varies by the platform).
-    let address: Address = Address::random([0xCA, 0xFE, 0xB0, 0x0B, 0xB0, 0x0B]);
-
-    log::info!("Our address = {address:?}");
+    let address: Address = Address::random([0xB0, 0x0B, 0xCA, 0xFE, 0xB0, 0x0B]);
+    log::info!("MAC address: {address:?}");
 
     let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
         HostResources::new();
     let stack = trouble_host::new(controller, &mut resources).set_random_address(address);
-
     let Host {
         central,
         mut runner,
         ..
     } = stack.build();
+    log::info!("BLE stack initialized!");
 
     let handler = Handler::new(sender);
     let mut scanner = Scanner::new(central);
+    log::info!("Start scanning BLE ruuvi packets");
     let _ = join(runner.run_with_handler(&handler), async {
         let config = ScanConfig {
             active: false, // No need for scan responses, data is all in advertisement payload
@@ -51,7 +48,7 @@ pub async fn run(
                 Timer::after(Duration::from_secs(2)).await;
                 drop(session); // stop scanning
             }
-            // wait before scanning again (tune this)
+            // wait before scanning again
             Timer::after(Duration::from_secs(4)).await;
         }
     })
@@ -88,6 +85,7 @@ impl EventHandler for Handler {
 }
 
 fn is_ruuvi_report(report: LeAdvReport<'_>) -> bool {
+    // Ruuvi raw v2 data
     report.addr_kind == AddrKind::RANDOM
         && report.event_kind == LeAdvEventKind::AdvInd
         && report.data.len() >= 7
