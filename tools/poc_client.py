@@ -40,11 +40,10 @@ class RuuviRawV2:
     mac: bytes = bytes.fromhex("DEADBEEF0609")  # 6 bytes
 
     def to_postcard_some(self) -> bytes:
-        """Serialize as postcard Option::Some(self)."""
+        """Serialize as postcard self."""
         if len(self.mac) != 6:
             raise ValueError("mac must be 6 bytes")
         parts: list[bytes] = []
-        parts.append(b"\x01")  # Option discriminant: Some
         parts.append(struct.pack("<B", self.format))
         parts.append(struct.pack("<h", self.temp))
         parts.append(struct.pack("<H", self.humidity))

@@ -75,9 +75,9 @@ async fn handle_conn(
             0x01 => {
                 let payload = &frame[1..];
                 // Expect postcard-serialized Option<RuuviRawV2>
-                match postcard::from_bytes::<Option<RuuviRawV2>>(payload) {
-                    Ok(maybe) => {
-                        tracing::info!("Device {:02X?} batch: {maybe:?}", device_id);
+                match postcard::from_bytes::<RuuviRawV2>(payload) {
+                    Ok(ruuvi_data) => {
+                        tracing::info!("Device {device_id:02X?} data: {ruuvi_data:?}");
                         // ACK (0x03,0x01)
                         sock.write_all(&[0x03, 0x01]).await?;
                     }

@@ -31,7 +31,7 @@ const NONCE_HIGH: u32 = 0xA5A5_0001; // fixed high word (could randomize at boot
 fn serialize_packet(pkt: RuuviRawV2, buf: &mut alloc::vec::Vec<u8>) -> Result<(), ()> {
     buf.clear();
     // Serialize Option<RuuviRawV2>
-    postcard::to_allocvec(&Some(pkt)).map_err(|_| ()).map(|v| {
+    postcard::to_allocvec(&pkt).map_err(|_| ()).map(|v| {
         buf.extend_from_slice(&v);
     })
 }
