@@ -58,11 +58,23 @@ async fn handle_conn(
     loop {
         // EOF
         if (sock.read_exact(&mut len_buf).await).is_err() {
+            tracing::info!("{} EOF while reading length", peer);
             break;
         }
         let frame_len = u32::from_be_bytes(len_buf);
+        tracing::debug!(
+            "Device {:02X?} raw_len_bytes={:02X?} parsed_len={}",
+            device_id,
+            len_buf,
+            frame_len
+        );
         if frame_len == 0 || frame_len > 64 * 1024 {
-            tracing::warn!("{} invalid frame_len={}", peer, frame_len);
+            tracing::warn!(
+                "{} invalid frame_len={} raw={:02X?} (closing)",
+                peer,
+                frame_len,
+                len_buf
+            );
             break;
         }
         let mut frame = vec![0u8; frame_len as usize];
