@@ -27,7 +27,7 @@ check-listener:
 	@echo "Check ruuvi-listener"
 	@cargo +esp check -p ruuvi-listener \
 		--config ruuvi-listener/.cargo/config.toml \
-		--profile ruuvi-listener-release \
+		--profile release \
 		--manifest-path "ruuvi-listener/Cargo.toml"
 
 check: check-common check-gateway check-listener

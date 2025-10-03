@@ -1,8 +1,8 @@
 [package]
-edition      = "2024"
-name         = "ruuvi-listener"
+edition = "2024"
+name = "ruuvi-listener"
 rust-version = "1.88"
-version      = "0.1.0"
+version = "0.1.0"
 
 [[bin]]
 name = "ruuvi-listener"
@@ -16,7 +16,6 @@ esp-hal = { version = "=1.0.0-rc.0", features = [
   "unstable",
 ] }
 log = "0.4.27"
-
 embassy-net = { version = "0.6.0", features = [
   "dhcpv4",
   "log",
@@ -74,20 +73,27 @@ embassy-sync = "0.7.2"
 dotenvy_macro = "0.15.7"
 serde-json-core = "0.6.0"
 itoa = "1.0.15"
-serde = { version = "1.0.225", features = ["derive"], default-features = false}
+serde = { version = "1.0.225", features = ["derive"], default-features = false }
 postcard = { version = "1.1.3", features = ["alloc"] }
 hmac = { version = "0.12.1", default-features = false }
-sha2 = { version="0.10.9", default-features = false }
+sha2 = { version = "0.10.9", default-features = false }
 const-str = "0.7.0"
+snow = { version = "0.10.0", default-features = false, features = [
+  "default-resolver",
+  "use-chacha20poly1305",
+  "use-curve25519",
+  "use-sha2",
+] }
+anyhow = { version = "1.0.100", default-features = false }
 
 [profile.dev]
-opt-level        = 's'
+opt-level = 's'
 
 [profile.release]
-codegen-units    = 1     # LLVM can perform better optimizations using a single thread
-debug            = 2
+codegen-units = 1        # LLVM can perform better optimizations using a single thread
+debug = 2
 debug-assertions = false
-incremental      = false
-lto              = 'fat'
-opt-level        = 's'
-overflow-checks  = false
+incremental = false
+lto = 'fat'
+opt-level = 's'
+overflow-checks = false
