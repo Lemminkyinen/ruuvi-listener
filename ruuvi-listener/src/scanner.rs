@@ -41,15 +41,14 @@ pub async fn run(
             window: Duration::from_millis(1000),
             ..Default::default()
         };
-        // Instead of holding the session forever, run scans in bursts
+
+        // Scan forever
         loop {
-            if let Ok(session) = scanner.scan(&config).await {
-                // scan for ~2s
-                Timer::after(Duration::from_secs(2)).await;
-                drop(session); // stop scanning
+            let scan_session = scanner.scan(&config).await;
+            if let Err(e) = scan_session {
+                log::error!("Error during scanning: {e:?}");
             }
-            // wait before scanning again
-            Timer::after(Duration::from_secs(4)).await;
+            Timer::after(Duration::from_secs(1)).await;
         }
     })
     .await;

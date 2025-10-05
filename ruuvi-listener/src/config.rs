@@ -11,6 +11,13 @@ pub const GATEWAY_IP: &str = dotenv!("GATEWAY_IP");
 pub const GATEWAY_PORT: &str = dotenv!("GATEWAY_PORT");
 pub const AUTH_KEY: &str = dotenv!("AUTH_KEY");
 
+// Validate auth key length is 32 bytes
+const _: () = {
+    if AUTH_KEY.len() != 32 {
+        panic!("AUTH_KEY must be exactly 32 bytes");
+    }
+};
+
 pub struct WifiConfig {
     pub ssid: &'static str,
     pub password: &'static str,
@@ -28,26 +35,27 @@ impl WifiConfig {
 pub struct GatewayConfig {
     pub ip: Ipv4Addr,
     pub port: u16,
-    pub auth: &'static str,
+    pub auth: [u8; 32],
 }
 
 impl GatewayConfig {
     pub const fn new() -> Self {
         let ip = const_str::ip_addr!(v4, GATEWAY_IP);
         let port = const_str::parse!(GATEWAY_PORT, u16);
+        let auth_key = const_str::to_byte_array!(AUTH_KEY);
         Self {
             ip,
             port,
-            auth: AUTH_KEY,
+            auth: auth_key,
         }
     }
 }
 
 pub struct BoardConfig {
     pub rng: Rng,
-    pub wifi_controller: WifiController<'static>,
+    pub wifi_controller: Option<WifiController<'static>>,
     pub interfaces: Option<Interfaces<'static>>,
-    pub ble_controller: ExternalController<BleConnector<'static>, 20>,
+    pub ble_controller: Option<ExternalController<BleConnector<'static>, 20>>,
 }
 
 impl BoardConfig {
@@ -59,9 +67,9 @@ impl BoardConfig {
     ) -> Self {
         Self {
             rng,
-            wifi_controller,
+            wifi_controller: Some(wifi_controller),
             interfaces: Some(interfaces),
-            ble_controller,
+            ble_controller: Some(ble_controller),
         }
     }
 }
