@@ -19,7 +19,7 @@ const PSK_KEY: [u8; 32] = {
 };
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RuuviRawV2 {
     pub format: u8,           // 0
     pub temp: i16,            // 1-2
@@ -32,6 +32,51 @@ pub struct RuuviRawV2 {
     pub movement_counter: u8, // 15
     pub measurement_seq: u16, // 16-17
     pub mac: [u8; 6],         // 18-23
+}
+
+#[derive(Debug)]
+pub struct RuuviV2 {
+    pub mac: [u8; 6],
+    pub temp: f32,
+    pub rel_humidity: f32,
+    pub abs_pressure: u32,
+    pub acc_x: i16,
+    pub acc_y: i16,
+    pub acc_z: i16,
+    pub battery_voltage: f32,
+    pub tx_power: i8,
+    pub movement_counter: u8,
+    pub measurement_seq: u16,
+}
+
+impl From<RuuviRawV2> for RuuviV2 {
+    fn from(raw: RuuviRawV2) -> Self {
+        // https://docs.ruuvi.com/communication/bluetooth-advertisements/data-format-5-rawv2
+        // Temperature in 0.005 degrees
+        let temp = raw.temp as f32 * 0.005;
+        // Humidity in 0.0025%. 0-163.83% range, though realistically 0-100%
+        let rel_humidity = f32::min(raw.humidity as f32 * 0.0025, 100f32);
+        // Pressure offset -50 000 Pa
+        let abs_pressure = raw.pressure as u32 + 50_000;
+        // First 11 bits are for battery voltage. From 1.6V to 3.646V
+        let battery_voltage = (1600 + (raw.power_info >> 5)) as f32 / 1000f32;
+        // Last 5 bits are for TX power. -40dBm - +20dBm
+        let tx_power = (raw.power_info & 0b11111) as i8 * 2 - 40;
+
+        Self {
+            mac: raw.mac,
+            temp,
+            rel_humidity,
+            abs_pressure,
+            acc_x: raw.acc_x,
+            acc_y: raw.acc_y,
+            acc_z: raw.acc_z,
+            battery_voltage,
+            tx_power,
+            movement_counter: raw.movement_counter,
+            measurement_seq: raw.measurement_seq,
+        }
+    }
 }
 
 async fn recv(stream: &mut TcpStream, rx_buffer: &mut [u8]) -> io::Result<usize> {
@@ -50,7 +95,7 @@ async fn send(stream: &mut TcpStream, buf: &[u8]) -> io::Result<()> {
 }
 
 async fn handle_conn(mut stream: tokio::net::TcpStream) -> Result<(), anyhow::Error> {
-    stream.set_ttl(10)?;
+    stream.set_ttl(30)?;
 
     let mut rx_buffer = [0u8; 4096];
     let mut noise_buf = [0u8; 4096];
@@ -79,7 +124,6 @@ async fn handle_conn(mut stream: tokio::net::TcpStream) -> Result<(), anyhow::Er
 
     // Transition the state machine into transport mode now that the handshake is complete.
     let mut transport = noise.into_transport_mode()?;
-
     tracing::info!("In transport mode");
 
     loop {
@@ -92,8 +136,9 @@ async fn handle_conn(mut stream: tokio::net::TcpStream) -> Result<(), anyhow::Er
                 let data = postcard::from_bytes::<RuuviRawV2>(&noise_buf[..len]);
 
                 match data {
-                    Ok(ruuvidata) => {
-                        tracing::info!("Data: {ruuvidata:?}");
+                    Ok(raw) => {
+                        let ruuvi_data = RuuviV2::from(raw);
+                        tracing::info!("Data: {ruuvi_data:?}");
                     }
                     Err(err) => tracing::error!("Failed to parse ruuvidata: {err}"),
                 }
