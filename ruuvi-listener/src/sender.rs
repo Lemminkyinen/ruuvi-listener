@@ -62,7 +62,6 @@ async fn recv(
 
 async fn send(socket: &mut TcpSocket<'_>, tx_buffer: &[u8]) -> Result<(), anyhow::Error> {
     let msg_len = u16::try_from(tx_buffer.len())?;
-    log::info!("Sending 2 + {msg_len} bytes: {}", msg_len + 2);
     socket
         .write_all(&msg_len.to_be_bytes())
         .await
@@ -265,12 +264,6 @@ pub async fn run(
                 send(&mut socket, &tx_buffer[..len]).await,
                 "Failed to send the encrypted message",
                 break 'sending
-            );
-
-            log::info!("Successfully send packet!");
-            log::info!(
-                "Channel item count: {}",
-                receiver.capacity() - receiver.free_capacity()
             );
 
             // After successful send, reset
