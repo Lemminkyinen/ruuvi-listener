@@ -39,6 +39,7 @@ pub struct RuuviV2 {
     pub mac: [u8; 6],
     pub temp: f32,
     pub rel_humidity: f32,
+    pub abs_humidity: f64,
     pub abs_pressure: u32,
     pub acc_x: i16,
     pub acc_y: i16,
@@ -47,6 +48,23 @@ pub struct RuuviV2 {
     pub tx_power: i8,
     pub movement_counter: u8,
     pub measurement_seq: u16,
+}
+
+impl RuuviV2 {
+    fn calculate_abs_humidity(temp: f32, rel_humidity: f32) -> f64 {
+        // https://en.wikipedia.org/wiki/Arden_Buck_equation
+        // TODO use enhancement factor
+
+        // Saturation vapor pressure in hPa
+        let ps_hpa = 6.1121f64
+            * ((18.678f64 - (temp as f64 / 234.5)) * (temp as f64 / (257.14 + temp as f64))).exp();
+        // In Pa
+        let ps = ps_hpa * 100.0;
+        // Actual vapor pressure
+        let pa = ps * (rel_humidity as f64 / 100.0);
+        // Absolute humidity in g/m^3
+        2.167 * pa / (temp as f64 + 273.15)
+    }
 }
 
 impl From<RuuviRawV2> for RuuviV2 {
@@ -63,10 +81,14 @@ impl From<RuuviRawV2> for RuuviV2 {
         // Last 5 bits are for TX power. -40dBm - +20dBm
         let tx_power = (raw.power_info & 0b11111) as i8 * 2 - 40;
 
+        // Abs humidity
+        let abs_humidity = Self::calculate_abs_humidity(temp, rel_humidity);
+
         Self {
             mac: raw.mac,
             temp,
             rel_humidity,
+            abs_humidity,
             abs_pressure,
             acc_x: raw.acc_x,
             acc_y: raw.acc_y,
@@ -170,4 +192,16 @@ async fn main() -> std::io::Result<()> {
         .init();
 
     tcp_server().await
+}
+
+#[cfg(test)]
+
+mod tests {
+    use super::RuuviV2;
+
+    #[test]
+    fn test_abs_humidity() {
+        let res = RuuviV2::calculate_abs_humidity(22.2f32, 52.4125f32);
+        assert_eq!(res, 10.29308183848681);
+    }
 }
