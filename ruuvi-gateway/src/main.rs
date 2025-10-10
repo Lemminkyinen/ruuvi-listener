@@ -1,12 +1,19 @@
+mod database;
+
+use crate::database::insert_data;
 use dotenvy_macro::dotenv;
 use serde::Deserialize;
 use snow::Builder;
 use snow::params::NoiseParams;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{Pool, Postgres};
 use std::sync::LazyLock;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 const AUTH_KEY: &str = dotenv!("AUTH_KEY");
+const DATABASE_URI: &str = dotenv!("DATABASE_URI");
+
 static PARAMS: LazyLock<NoiseParams> =
     LazyLock::new(|| "Noise_XXpsk3_25519_ChaChaPoly_SHA256".parse().unwrap());
 
@@ -127,7 +134,10 @@ async fn send(stream: &mut TcpStream, buf: &[u8]) -> io::Result<()> {
     stream.flush().await
 }
 
-async fn handle_conn(mut stream: tokio::net::TcpStream) -> Result<(), anyhow::Error> {
+async fn handle_conn(
+    mut stream: tokio::net::TcpStream,
+    pool: Pool<Postgres>,
+) -> Result<(), anyhow::Error> {
     stream.set_ttl(30)?;
 
     let mut rx_buffer = [0u8; 4096];
@@ -162,6 +172,7 @@ async fn handle_conn(mut stream: tokio::net::TcpStream) -> Result<(), anyhow::Er
     loop {
         match recv(&mut stream, &mut rx_buffer).await {
             Ok(len) => {
+                let timestamp = chrono::Utc::now();
                 // Decrypt message
                 let len = transport.read_message(&rx_buffer[..len], &mut noise_buf)?;
 
@@ -171,7 +182,10 @@ async fn handle_conn(mut stream: tokio::net::TcpStream) -> Result<(), anyhow::Er
                 match data {
                     Ok(raw) => {
                         let ruuvi_data = RuuviV2::from(raw);
-                        tracing::info!("Data: {ruuvi_data:?}");
+                        tracing::debug!("Data: {ruuvi_data:?}");
+                        if let Err(e) = insert_data(&pool, ruuvi_data, timestamp).await {
+                            tracing::error!("Failed insert data: {e}");
+                        }
                     }
                     Err(err) => tracing::error!("Failed to parse ruuvidata: {err}"),
                 }
@@ -183,13 +197,14 @@ async fn handle_conn(mut stream: tokio::net::TcpStream) -> Result<(), anyhow::Er
     }
 }
 
-async fn tcp_server() -> std::io::Result<()> {
-    let listener = TcpListener::bind("0.0.0.0:9090").await?;
+async fn tcp_server(pool: sqlx::Pool<sqlx::Postgres>) -> Result<(), anyhow::Error> {
+    let listener: TcpListener = TcpListener::bind("0.0.0.0:9090").await?;
     tracing::info!("TCP ingestion listening on :9090");
     loop {
         let (sock, addr) = listener.accept().await?;
+        let pool = pool.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(sock).await {
+            if let Err(e) = handle_conn(sock, pool).await {
                 tracing::error!("Conn {addr} error: {e}");
             }
         });
@@ -197,13 +212,20 @@ async fn tcp_server() -> std::io::Result<()> {
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt()
         .with_env_filter("info")
         .compact()
         .init();
 
-    tcp_server().await
+    tracing::info!("Connecting to the database...");
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(DATABASE_URI)
+        .await?;
+    tracing::info!("Database connection created!");
+
+    tcp_server(pool).await
 }
 
 #[cfg(test)]
