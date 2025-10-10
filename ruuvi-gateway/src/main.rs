@@ -87,7 +87,6 @@ async fn recv(stream: &mut TcpStream, rx_buffer: &mut [u8]) -> io::Result<usize>
 }
 
 async fn send(stream: &mut TcpStream, buf: &[u8]) -> io::Result<()> {
-    stream.writable().await?;
     let len = u16::try_from(buf.len()).expect("Too large message");
     stream.write_all(&len.to_be_bytes()).await?;
     stream.write_all(buf).await?;
