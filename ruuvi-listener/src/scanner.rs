@@ -71,7 +71,7 @@ impl Handler {
     }
 
     fn is_new_seq(&self, mac: [u8; 6], seq: u16) -> bool {
-        let map = self.sequence_numbers.borrow_mut();
+        let map = self.sequence_numbers.borrow();
         map.get(&mac).is_none_or(|prev_seq| *prev_seq != seq)
     }
 
