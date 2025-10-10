@@ -38,6 +38,7 @@ pub struct RuuviRawV2 {
 pub struct RuuviV2 {
     pub mac: [u8; 6],
     pub temp: f32,
+    pub dew_point_temp: f64,
     pub rel_humidity: f32,
     pub abs_humidity: f64,
     pub abs_pressure: u32,
@@ -65,6 +66,15 @@ impl RuuviV2 {
         // Absolute humidity in g/m^3
         2.167 * pa / (temp as f64 + 273.15)
     }
+
+    fn calculate_dew_pont(temp: f32, rel_humidity: f32) -> f64 {
+        // https://en.wikipedia.org/wiki/Tetens_equation
+        // https://en.wikipedia.org/wiki/Clausius%E2%80%93Clapeyron_relation#August%E2%80%93Roche%E2%80%93Magnus_approximation
+        let a = 17.625f64;
+        let b = 243.04f64;
+        let gamma = (rel_humidity as f64 / 100.0).ln() + (a * temp as f64) / (b + temp as f64);
+        (b * gamma) / (a - gamma)
+    }
 }
 
 impl From<RuuviRawV2> for RuuviV2 {
@@ -80,13 +90,15 @@ impl From<RuuviRawV2> for RuuviV2 {
         let battery_voltage = (1600 + (raw.power_info >> 5)) as f32 / 1000f32;
         // Last 5 bits are for TX power. -40dBm - +20dBm
         let tx_power = (raw.power_info & 0b11111) as i8 * 2 - 40;
-
         // Abs humidity
         let abs_humidity = Self::calculate_abs_humidity(temp, rel_humidity);
+        // Dew point temp
+        let dew_point_temp = Self::calculate_dew_pont(temp, rel_humidity);
 
         Self {
             mac: raw.mac,
             temp,
+            dew_point_temp,
             rel_humidity,
             abs_humidity,
             abs_pressure,
@@ -203,5 +215,10 @@ mod tests {
     fn test_abs_humidity() {
         let res = RuuviV2::calculate_abs_humidity(22.2f32, 52.4125f32);
         assert_eq!(res, 10.29308183848681);
+    }
+
+    fn test_dew_point() {
+        let res = RuuviV2::calculate_dew_pont(22.22f32, 52.234f32);
+        assert_eq!(res, 12.0);
     }
 }
