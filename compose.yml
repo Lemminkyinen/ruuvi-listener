@@ -1,0 +1,6 @@
+services:
+  gateway:
+    build: .
+    restart: always
+    ports:
+      - "9090:9090"
