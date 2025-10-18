@@ -20,6 +20,7 @@ use crate::schema::RuuviRawV2;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_time::Instant;
 use esp_backtrace as _;
 use static_cell::StaticCell;
 
@@ -27,7 +28,7 @@ use static_cell::StaticCell;
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
-static CHANNEL: StaticCell<Channel<NoopRawMutex, RuuviRawV2, 16>> = StaticCell::new();
+static CHANNEL: StaticCell<Channel<NoopRawMutex, (RuuviRawV2, Instant), 16>> = StaticCell::new();
 static BOARD_CONFIG: StaticCell<BoardConfig> = StaticCell::new();
 
 // Constant configs

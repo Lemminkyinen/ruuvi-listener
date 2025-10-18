@@ -1,6 +1,7 @@
 mod database;
 
 use crate::database::insert_data;
+use chrono::{DateTime, Utc};
 use dotenvy_macro::dotenv;
 use serde::Deserialize;
 use snow::Builder;
@@ -28,17 +29,18 @@ const PSK_KEY: [u8; 32] = {
 #[repr(C)]
 #[derive(Debug, Deserialize)]
 pub struct RuuviRawV2 {
-    pub format: u8,           // 0
-    pub temp: i16,            // 1-2
-    pub humidity: u16,        // 3-4
-    pub pressure: u16,        // 5-6
-    pub acc_x: i16,           // 7-8
-    pub acc_y: i16,           // 9-10
-    pub acc_z: i16,           // 11-12
-    pub power_info: u16,      // 13-14
-    pub movement_counter: u8, // 15
-    pub measurement_seq: u16, // 16-17
-    pub mac: [u8; 6],         // 18-23
+    pub format: u8,             // 0
+    pub temp: i16,              // 1-2
+    pub humidity: u16,          // 3-4
+    pub pressure: u16,          // 5-6
+    pub acc_x: i16,             // 7-8
+    pub acc_y: i16,             // 9-10
+    pub acc_z: i16,             // 11-12
+    pub power_info: u16,        // 13-14
+    pub movement_counter: u8,   // 15
+    pub measurement_seq: u16,   // 16-17
+    pub mac: [u8; 6],           // 18-23
+    pub timestamp: Option<u64>, // Added field
 }
 
 #[derive(Debug)]
@@ -56,6 +58,7 @@ pub struct RuuviV2 {
     pub tx_power: i8,
     pub movement_counter: u8,
     pub measurement_seq: u16,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl RuuviV2 {
@@ -82,10 +85,8 @@ impl RuuviV2 {
         let gamma = (rel_humidity as f64 / 100.0).ln() + (a * temp as f64) / (b + temp as f64);
         (b * gamma) / (a - gamma)
     }
-}
 
-impl From<RuuviRawV2> for RuuviV2 {
-    fn from(raw: RuuviRawV2) -> Self {
+    fn from_raw(raw: RuuviRawV2, fallback_dt: DateTime<Utc>) -> Self {
         // https://docs.ruuvi.com/communication/bluetooth-advertisements/data-format-5-rawv2
         // Temperature in 0.005 degrees
         let temp = raw.temp as f32 * 0.005;
@@ -102,6 +103,12 @@ impl From<RuuviRawV2> for RuuviV2 {
         // Dew point temp
         let dew_point_temp = Self::calculate_dew_pont(temp, rel_humidity);
 
+        let timestamp = DateTime::from_timestamp_millis(raw.timestamp.unwrap_or(0) as i64)
+            .unwrap_or_else(|| {
+                tracing::warn!("Failed to parse timestamp");
+                fallback_dt
+            });
+
         Self {
             mac: raw.mac,
             temp,
@@ -116,6 +123,7 @@ impl From<RuuviRawV2> for RuuviV2 {
             tx_power,
             movement_counter: raw.movement_counter,
             measurement_seq: raw.measurement_seq,
+            timestamp,
         }
     }
 }
@@ -169,10 +177,19 @@ async fn handle_conn(
     let mut transport = noise.into_transport_mode()?;
     tracing::info!("In transport mode");
 
+    // Measure network latency
+    let _ = recv(&mut stream, &mut rx_buffer).await?;
+    let time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let len = transport.write_message(&time.to_be_bytes(), &mut noise_buf)?;
+    send(&mut stream, &noise_buf[..len]).await?;
+
     loop {
         match recv(&mut stream, &mut rx_buffer).await {
             Ok(len) => {
-                let timestamp = chrono::Utc::now();
+                let fallback_dt = Utc::now();
                 // Decrypt message
                 let len = transport.read_message(&rx_buffer[..len], &mut noise_buf)?;
 
@@ -181,9 +198,9 @@ async fn handle_conn(
 
                 match data {
                     Ok(raw) => {
-                        let ruuvi_data = RuuviV2::from(raw);
+                        let ruuvi_data = RuuviV2::from_raw(raw, fallback_dt);
                         tracing::debug!("Data: {ruuvi_data:?}");
-                        if let Err(e) = insert_data(&pool, ruuvi_data, timestamp).await {
+                        if let Err(e) = insert_data(&pool, ruuvi_data).await {
                             tracing::error!("Failed insert data: {e}");
                         }
                     }

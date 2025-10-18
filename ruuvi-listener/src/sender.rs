@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use embassy_net::{Stack, tcp::TcpSocket};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Receiver;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use embedded_io_async::{Read, Write};
 use esp_hal::rng::Rng;
 use snow::params::{CipherChoice, DHChoice, HashChoice};
@@ -161,10 +161,39 @@ async fn noise_handshake(
         .map_err(|e| anyhow!("Failed to convert into transport mode: {e:?}"))
 }
 
+async fn sync_time(
+    socket: &mut TcpSocket<'_>,
+    tp: &mut TransportState,
+    noise_buffer: &mut [u8; 1024],
+    time_reference: &mut Option<(Instant, u64)>,
+) -> Result<(), anyhow::Error> {
+    // Gateway sends u64 unix timestamp as be bytes
+    let mut buf = [0u8; 8];
+    // Request time
+    let t1 = Instant::now();
+    send(socket, &[]).await?;
+
+    let len = recv(socket, noise_buffer).await?;
+    let elapsed = t1.elapsed();
+    tp.read_message(&noise_buffer[..len], &mut buf)
+        .map_err(|e| anyhow!("Failed to read unix timestamp: {e}"))?;
+
+    let timestamp = u64::from_be_bytes(buf);
+    let delay = elapsed / 2;
+    let ref_t = t1 + delay;
+    let adjusted_timestamp = timestamp + delay.as_millis();
+
+    // Store the reference point
+    *time_reference = Some((ref_t, adjusted_timestamp));
+    log::info!("Network delay: {} ms", delay.as_millis());
+    log::info!("Time synced! {adjusted_timestamp}");
+    Ok(())
+}
+
 #[embassy_executor::task]
 pub async fn run(
     stack: Stack<'static>,
-    receiver: Receiver<'static, NoopRawMutex, RuuviRawV2, 16>,
+    receiver: Receiver<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
     gateway_config: GatewayConfig,
     rng: Rng,
 ) {
@@ -178,6 +207,7 @@ pub async fn run(
 
     let mut backoff_ms = BASE_BACKOFF_MS;
     let server = (gateway_config.ip, gateway_config.port);
+    let mut time_reference: Option<(Instant, u64)> = None;
 
     loop {
         // Parse noise params
@@ -210,6 +240,7 @@ pub async fn run(
         socket.set_timeout(Some(Duration::from_secs(TIMEOUT_SECS)));
 
         // Connect
+        log::info!("Trying to connect to: {}:{}", server.0, server.1);
         match socket.connect(server).await {
             Ok(_) => log::info!("TCP connected"),
             Err(e) => {
@@ -242,10 +273,26 @@ pub async fn run(
             }
         };
 
+        try_continue!(
+            sync_time(&mut socket, &mut tp, &mut noise_buf, &mut time_reference).await,
+            "Failed to synchronize time"
+        );
+
         'sending: loop {
             // Receive RuuviRawV2 from the channel
             receiver.ready_to_receive().await;
-            let pkt = receiver.receive().await;
+            let (mut pkt, t) = receiver.receive().await;
+
+            // Compute timestamp based on the reference T
+            if let Some((ref_t, ref_ts)) = time_reference {
+                if t >= ref_t {
+                    let elapsed = t.saturating_duration_since(ref_t);
+                    pkt.timestamp = Some(ref_ts + elapsed.as_millis());
+                } else {
+                    let elapsed = ref_t.saturating_duration_since(t);
+                    pkt.timestamp = Some(ref_ts - elapsed.as_millis());
+                }
+            }
 
             // Serialize it with postcard
             let payload = try_continue!(

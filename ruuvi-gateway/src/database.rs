@@ -21,15 +21,10 @@
 //     "sensor_readings_pkey" PRIMARY KEY, btree (id)
 
 use crate::RuuviV2;
-use chrono::{DateTime, Utc};
 use sqlx::types::mac_address::MacAddress;
 use sqlx::{Pool, Postgres};
 
-pub async fn insert_data(
-    pool: &Pool<Postgres>,
-    data: RuuviV2,
-    timestamp: DateTime<Utc>,
-) -> Result<(), anyhow::Error> {
+pub async fn insert_data(pool: &Pool<Postgres>, data: RuuviV2) -> Result<(), anyhow::Error> {
     sqlx::query::<Postgres>(
         r#"
         INSERT INTO sensor_readings (
@@ -50,7 +45,7 @@ pub async fn insert_data(
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         "#,
     )
-    .bind(timestamp)
+    .bind(data.timestamp)
     .bind(MacAddress::new(data.mac))
     .bind(data.temp)
     .bind(data.rel_humidity)

@@ -5,6 +5,7 @@ use core::cell::RefCell;
 use embassy_futures::join::join;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Sender;
+use embassy_time::Instant;
 use embassy_time::{Duration, Timer};
 use esp_wifi::ble::controller::BleConnector;
 use heapless::index_map::FnvIndexMap;
@@ -17,7 +18,7 @@ const RUUVI_MAN_ID: [u8; 2] = [0x99, 0x04];
 #[embassy_executor::task]
 pub async fn run(
     controller: ExternalController<BleConnector<'static>, 20>,
-    sender: Sender<'static, NoopRawMutex, RuuviRawV2, 16>,
+    sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
 ) {
     let address: Address = Address::random([0xB0, 0x0B, 0xCA, 0xFE, 0xB0, 0x0B]);
     log::info!("MAC address: {address:?}");
@@ -57,13 +58,13 @@ pub async fn run(
 }
 
 struct Handler {
-    sender: Sender<'static, NoopRawMutex, RuuviRawV2, 16>,
+    sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
     // Use interior mutability since, handler cannot access its mutable self
     sequence_numbers: RefCell<FnvIndexMap<[u8; 6], u16, 16>>,
 }
 
 impl Handler {
-    fn new(sender: Sender<'static, NoopRawMutex, RuuviRawV2, 16>) -> Self {
+    fn new(sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>) -> Self {
         Handler {
             sender,
             sequence_numbers: RefCell::new(FnvIndexMap::new()),
@@ -95,6 +96,7 @@ impl EventHandler for Handler {
     fn on_adv_reports(&self, mut it: LeAdvReportsIter<'_>) {
         while let Some(Ok(report)) = it.next() {
             if self.is_ruuvi_report(report) {
+                let t = Instant::now();
                 // Ruuvitag v2 raw data starts at index 7
                 match RuuviRawV2::from_bytes(&report.data[7..]) {
                     Ok(parsed) => {
@@ -119,7 +121,7 @@ impl EventHandler for Handler {
                         }
 
                         // Send data to the channel
-                        if let Err(err) = self.sender.try_send(parsed) {
+                        if let Err(err) = self.sender.try_send((parsed, t)) {
                             log::error!("Failed to send RuuviRawV2 to the channel! {err:?}");
                         }
                     }
