@@ -85,6 +85,8 @@ snow = { version = "0.10.0", default-features = false, features = [
   "use-sha2",
 ] }
 anyhow = { version = "1.0.100", default-features = false }
+esp-hal-smartled = { version = "0.16.0", features = ["esp32s3"] }
+smart-leds = "0.4.0"
 
 [profile.dev]
 opt-level = 's'

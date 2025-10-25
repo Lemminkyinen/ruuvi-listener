@@ -8,6 +8,7 @@
 
 mod board;
 mod config;
+mod led;
 mod net;
 mod scanner;
 mod schema;
@@ -15,6 +16,7 @@ mod sender;
 
 extern crate alloc;
 use crate::config::{BoardConfig, GatewayConfig, WifiConfig};
+use crate::led::LedEvent;
 use crate::net::acquire_address;
 use crate::schema::RuuviRawV2;
 use embassy_executor::Spawner;
@@ -29,6 +31,7 @@ use static_cell::StaticCell;
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static CHANNEL: StaticCell<Channel<NoopRawMutex, (RuuviRawV2, Instant), 16>> = StaticCell::new();
+static LED_CHANNEL: StaticCell<Channel<NoopRawMutex, LedEvent, 16>> = StaticCell::new();
 static BOARD_CONFIG: StaticCell<BoardConfig> = StaticCell::new();
 
 // Constant configs
@@ -57,6 +60,17 @@ async fn main(spawner: Spawner) {
 
     acquire_address(stack).await;
 
+    // Run LED task for user feedback
+    let led = board_config.led.take().unwrap();
+    // Initialize a bounded channel of LED events
+    let led_channel = &*LED_CHANNEL.init(Channel::new());
+    let led_sender = led_channel.sender();
+    let led_sender2 = led_sender;
+    let receiver = led_channel.receiver();
+    spawner
+        .spawn(led::task(led, receiver))
+        .expect("Failed to spawn led task!");
+
     // Initialize a bounded channel of Ruuvi packets
     let channel = &*CHANNEL.init(Channel::new());
     let sender = channel.sender();
@@ -70,6 +84,7 @@ async fn main(spawner: Spawner) {
                 .take()
                 .expect("BLE controller taken already"),
             sender,
+            led_sender,
         ))
         .expect("Failed to spawn BLE scanner!");
 
@@ -80,6 +95,7 @@ async fn main(spawner: Spawner) {
             receiver,
             GATEWAY_CONFIG,
             board_config.rng,
+            led_sender2,
         ))
         .expect("Failed to HTTP sender logger!");
 }

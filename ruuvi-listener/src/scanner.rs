@@ -1,3 +1,4 @@
+use crate::led::LedEvent;
 use crate::schema::RuuviRawV2;
 use bt_hci::param::LeAdvEventKind;
 use bt_hci::param::LeAdvReport;
@@ -19,6 +20,7 @@ const RUUVI_MAN_ID: [u8; 2] = [0x99, 0x04];
 pub async fn run(
     controller: ExternalController<BleConnector<'static>, 20>,
     sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+    led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
 ) {
     let address: Address = Address::random([0xB0, 0x0B, 0xCA, 0xFE, 0xB0, 0x0B]);
     log::info!("MAC address: {address:?}");
@@ -33,7 +35,7 @@ pub async fn run(
     } = stack.build();
     log::info!("BLE stack initialized!");
 
-    let handler = Handler::new(sender);
+    let handler = Handler::new(sender, led_sender);
     let mut scanner = Scanner::new(central);
     log::info!("Start scanning BLE ruuvi packets");
     let _ = join(runner.run_with_handler(&handler), async {
@@ -59,14 +61,19 @@ pub async fn run(
 
 struct Handler {
     sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+    led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
     // Use interior mutability since, handler cannot access its mutable self
     sequence_numbers: RefCell<FnvIndexMap<[u8; 6], u16, 16>>,
 }
 
 impl Handler {
-    fn new(sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>) -> Self {
+    fn new(
+        sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+        led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
+    ) -> Self {
         Handler {
             sender,
+            led_sender,
             sequence_numbers: RefCell::new(FnvIndexMap::new()),
         }
     }
@@ -112,6 +119,9 @@ impl EventHandler for Handler {
 
                         // If it's not new, skip the loop
                         if !is_new {
+                            if let Err(err) = self.led_sender.try_send(LedEvent::BleDuplicate) {
+                                log::error!("Failed to send LedEvent to the channel! {err:?}");
+                            }
                             log::info!(
                                 "Old data received, skipping! mac: {:?}, seq: {}",
                                 parsed.mac,
@@ -123,6 +133,9 @@ impl EventHandler for Handler {
                         // Send data to the channel
                         if let Err(err) = self.sender.try_send((parsed, t)) {
                             log::error!("Failed to send RuuviRawV2 to the channel! {err:?}");
+                        }
+                        if let Err(err) = self.led_sender.try_send(LedEvent::BleOk) {
+                            log::error!("Failed to send LedEvent to the channel! {err:?}");
                         }
                     }
                     Err(e) => log::error!("Payload error! {e:?}!"),

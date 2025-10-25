@@ -1,7 +1,9 @@
 use bt_hci::controller::ExternalController;
 use core::net::Ipv4Addr;
 use dotenvy_macro::dotenv;
+use esp_hal::rmt::{ConstChannelAccess, Tx};
 use esp_hal::rng::Rng;
+use esp_hal_smartled::SmartLedsAdapterAsync;
 use esp_wifi::ble::controller::BleConnector;
 use esp_wifi::wifi::{Interfaces, WifiController};
 
@@ -56,6 +58,7 @@ pub struct BoardConfig {
     pub wifi_controller: Option<WifiController<'static>>,
     pub interfaces: Option<Interfaces<'static>>,
     pub ble_controller: Option<ExternalController<BleConnector<'static>, 20>>,
+    pub led: Option<SmartLedsAdapterAsync<ConstChannelAccess<Tx, 0>, 25>>,
 }
 
 impl BoardConfig {
@@ -64,12 +67,14 @@ impl BoardConfig {
         wifi_controller: WifiController<'static>,
         interfaces: Interfaces<'static>,
         ble_controller: ExternalController<BleConnector<'static>, 20>,
+        led: Option<SmartLedsAdapterAsync<ConstChannelAccess<Tx, 0>, 25>>,
     ) -> Self {
         Self {
             rng,
             wifi_controller: Some(wifi_controller),
             interfaces: Some(interfaces),
             ble_controller: Some(ble_controller),
+            led,
         }
     }
 }

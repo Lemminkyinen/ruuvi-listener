@@ -1,10 +1,12 @@
 use crate::config::GatewayConfig;
+use crate::led::LedEvent;
 use crate::schema::RuuviRawV2;
 use alloc::boxed::Box;
 use anyhow::anyhow;
 use embassy_net::{Stack, tcp::TcpSocket};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Receiver;
+use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_io_async::{Read, Write};
 use esp_hal::rng::Rng;
@@ -196,6 +198,7 @@ pub async fn run(
     receiver: Receiver<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
     gateway_config: GatewayConfig,
     rng: Rng,
+    led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
 ) {
     // Buffers
     let mut socket_rx_buffer = [0u8; 2048];
@@ -312,6 +315,10 @@ pub async fn run(
                 "Failed to send the encrypted message",
                 break 'sending
             );
+
+            if let Err(err) = led_sender.try_send(LedEvent::TcpOk) {
+                log::error!("Failed to send LedEvent to the channel! {err:?}");
+            }
 
             // After successful send, reset
             backoff_ms = BASE_BACKOFF_MS;
