@@ -1,5 +1,5 @@
 use crate::led::LedEvent;
-use crate::schema::RuuviRawV2;
+use crate::schema::{RuuviRaw, RuuviRawV2, parse_ruuvi_raw};
 use bt_hci::param::LeAdvEventKind;
 use bt_hci::param::LeAdvReport;
 use core::cell::RefCell;
@@ -19,7 +19,7 @@ const RUUVI_MAN_ID: [u8; 2] = [0x99, 0x04];
 #[embassy_executor::task]
 pub async fn run(
     controller: ExternalController<BleConnector<'static>, 20>,
-    sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+    sender: Sender<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
     led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
 ) {
     let address: Address = Address::random([0xB0, 0x0B, 0xCA, 0xFE, 0xB0, 0x0B]);
@@ -60,15 +60,15 @@ pub async fn run(
 }
 
 struct Handler {
-    sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+    sender: Sender<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
     led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
     // Use interior mutability since, handler cannot access its mutable self
-    sequence_numbers: RefCell<FnvIndexMap<[u8; 6], u16, 16>>,
+    sequence_numbers: RefCell<FnvIndexMap<[u8; 6], u32, 16>>,
 }
 
 impl Handler {
     fn new(
-        sender: Sender<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+        sender: Sender<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
         led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
     ) -> Self {
         Handler {
@@ -78,12 +78,12 @@ impl Handler {
         }
     }
 
-    fn is_new_seq(&self, mac: [u8; 6], seq: u16) -> bool {
+    fn is_new_seq(&self, mac: [u8; 6], seq: u32) -> bool {
         let map = self.sequence_numbers.borrow();
         map.get(&mac).is_none_or(|prev_seq| *prev_seq != seq)
     }
 
-    fn upsert_seq(&self, mac: [u8; 6], seq: u16) {
+    fn upsert_seq(&self, mac: [u8; 6], seq: u32) {
         let mut map = self.sequence_numbers.borrow_mut();
         _ = map.insert(mac, seq).map_err(|(mac, seq_key)| {
             log::error!("Failed to insert key {mac:?}, value: {seq_key}")
@@ -105,7 +105,8 @@ impl EventHandler for Handler {
             if self.is_ruuvi_report(report) {
                 let t = Instant::now();
                 // Ruuvitag v2 raw data starts at index 7
-                match RuuviRawV2::from_bytes(&report.data[7..]) {
+                match parse_ruuvi_raw(&report.data[7..]) {
+                    // match RuuviRawV2::from_bytes(&report.data[7..]) {
                     Ok(parsed) => {
                         // If channel is full, empty it
                         if self.sender.is_full() {
@@ -113,9 +114,12 @@ impl EventHandler for Handler {
                             log::warn!("Channel full. Clearing channel for new data!");
                         }
 
+                        let mac = parsed.mac();
+                        let measurement_seq = parsed.measurement_seq();
+
                         // Verify the sequence number of the packet
-                        let is_new = self.is_new_seq(parsed.mac, parsed.measurement_seq);
-                        self.upsert_seq(parsed.mac, parsed.measurement_seq);
+                        let is_new = self.is_new_seq(mac, measurement_seq);
+                        self.upsert_seq(mac, measurement_seq);
 
                         // If it's not new, skip the loop
                         if !is_new {
@@ -123,9 +127,7 @@ impl EventHandler for Handler {
                                 log::error!("Failed to send LedEvent to the channel! {err:?}");
                             }
                             log::info!(
-                                "Old data received, skipping! mac: {:?}, seq: {}",
-                                parsed.mac,
-                                parsed.measurement_seq
+                                "Old data received, skipping! mac: {mac:?}, seq: {measurement_seq}"
                             );
                             continue;
                         }
@@ -140,6 +142,13 @@ impl EventHandler for Handler {
                     }
                     Err(e) => log::error!("Payload error! {e:?}!"),
                 }
+            } else {
+                if report.data[5..7] == RUUVI_MAN_ID {
+                    let data_len = report.data[7..].len();
+                    log::info!("Saatiin ruuvidataa: {data_len}");
+                    log::info!("data format: {:X?}", report.data[7]);
+                }
+                log::info!("Muuta dataa");
             }
         }
     }

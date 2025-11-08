@@ -1,6 +1,6 @@
 use crate::config::GatewayConfig;
 use crate::led::LedEvent;
-use crate::schema::RuuviRawV2;
+use crate::schema::RuuviRaw;
 use alloc::boxed::Box;
 use anyhow::anyhow;
 use embassy_net::{Stack, tcp::TcpSocket};
@@ -195,7 +195,7 @@ async fn sync_time(
 #[embassy_executor::task]
 pub async fn run(
     stack: Stack<'static>,
-    receiver: Receiver<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+    receiver: Receiver<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
     gateway_config: GatewayConfig,
     rng: Rng,
     led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
@@ -207,6 +207,8 @@ pub async fn run(
     let mut tx_buffer = [0u8; 1024];
     let mut noise_buf = [0u8; 1024];
     let mut postcard_buf = [0u8; 512];
+
+    let mut temp_buff = [0u8; 512];
 
     let mut backoff_ms = BASE_BACKOFF_MS;
     let server = (gateway_config.ip, gateway_config.port);
@@ -290,22 +292,31 @@ pub async fn run(
             if let Some((ref_t, ref_ts)) = time_reference {
                 if t >= ref_t {
                     let elapsed = t.saturating_duration_since(ref_t);
-                    pkt.timestamp = Some(ref_ts + elapsed.as_millis());
+                    pkt.set_timestamp(Some(ref_ts + elapsed.as_millis()));
                 } else {
                     let elapsed = ref_t.saturating_duration_since(t);
-                    pkt.timestamp = Some(ref_ts - elapsed.as_millis());
+                    pkt.set_timestamp(Some(ref_ts - elapsed.as_millis()));
                 }
             }
 
+            // Unwrap the enum and convert to bytes (safe)
+            let inner_data = pkt.to_bytes();
+
             // Serialize it with postcard
             let payload = try_continue!(
-                postcard::to_slice(&pkt, &mut postcard_buf),
+                postcard::to_slice(&inner_data, &mut postcard_buf),
                 "Failed to postcard serialize RuuviRawV2"
             );
 
+            let new_payload_len = payload.len() + 1;
+            temp_buff[0] = inner_data[0];
+            temp_buff[1..new_payload_len].copy_from_slice(payload);
+
+            let new_payload = &temp_buff[0..new_payload_len];
+
             // Encrypt serialized data
             let len = try_continue!(
-                tp.write_message(payload, &mut tx_buffer),
+                tp.write_message(new_payload, &mut tx_buffer),
                 "Failed to noise encrypt the message"
             );
 

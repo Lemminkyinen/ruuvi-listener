@@ -193,6 +193,10 @@ async fn handle_conn(
                 // Decrypt message
                 let len = transport.read_message(&rx_buffer[..len], &mut noise_buf)?;
 
+                tracing::info!("Format: {:X?}", &noise_buf[0]);
+
+                continue;
+
                 // Postcard deserialize
                 let data = postcard::from_bytes::<RuuviRawV2>(&noise_buf[..len]);
 

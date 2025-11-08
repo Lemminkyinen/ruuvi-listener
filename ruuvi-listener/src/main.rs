@@ -18,7 +18,7 @@ extern crate alloc;
 use crate::config::{BoardConfig, GatewayConfig, WifiConfig};
 use crate::led::LedEvent;
 use crate::net::acquire_address;
-use crate::schema::RuuviRawV2;
+use crate::schema::RuuviRaw;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
@@ -30,7 +30,7 @@ use static_cell::StaticCell;
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
-static CHANNEL: StaticCell<Channel<NoopRawMutex, (RuuviRawV2, Instant), 16>> = StaticCell::new();
+static CHANNEL: StaticCell<Channel<NoopRawMutex, (RuuviRaw, Instant), 16>> = StaticCell::new();
 static LED_CHANNEL: StaticCell<Channel<NoopRawMutex, LedEvent, 16>> = StaticCell::new();
 static BOARD_CONFIG: StaticCell<BoardConfig> = StaticCell::new();
 
