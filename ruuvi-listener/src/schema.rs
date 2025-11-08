@@ -29,42 +29,40 @@ pub struct RuuviRawV2 {
 
 #[repr(C)]
 #[derive(Debug, Clone, Serialize)]
-pub struct RuuviRawE1 {
-    pub format: u8,           // 0 (should be 0xE1)
-    pub temp: i16,            // 1-2 raw, 0.005 °C units
-    pub humidity: u16,        // 3-4 raw, 0.0025 % units
-    pub pressure: u16,        // 5-6 raw, Pa with -50000 offset
-    pub pm1_0: u16,           // 7-8 raw, 0.1 µg/m³
-    pub pm2_5: u16,           // 9-10 raw, 0.1 µg/m³
-    pub pm4_0: u16,           // 11-12 raw, 0.1 µg/m³
-    pub pm10_0: u16,          // 13-14 raw, 0.1 µg/m³
-    pub co2: u16,             // 15-16 raw, ppm
-    pub voc_index: u16,       // 9-bit (byte17 << 1 | flags bit6)
-    pub nox_index: u16,       // 9-bit (byte18 << 1 | flags bit7)
-    pub luminosity: u32,      // 19-21 24-bit, 0.01 lux units
-    pub measurement_seq: u32, // 25-27 24-bit counter
-    pub flags: u8,            // 28
-    pub mac: [u8; 6],         // 34-39
+pub struct RuuviRawV6 {
+    pub format: u8,          // 0 (should be 0x06)
+    pub temp: i16,           // 1-2, 0.005 °C units
+    pub humidity: u16,       // 3-4, 0.0025 % units
+    pub pressure: u16,       // 5-6, Pa with -50000 offset
+    pub pm2_5: u16,          // 7-8, 0.1 µg/m³
+    pub co2: u16,            // 9-10, ppm
+    pub voc_index: u16,      // 11 + flags b6, 9 bits
+    pub nox_index: u16,      // 12 + flags b7, 9 bits
+    pub luminosity: u8,      // 13, logarithmic
+    pub reserved: u8,        // 14, always 255
+    pub measurement_seq: u8, // 15
+    pub flags: u8,           // 16
+    pub half_mac: [u8; 3],   // 17-19, lowest 3 bytes of MAC
     pub timestamp: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub enum RuuviRaw {
     V2(RuuviRawV2),
-    E1(RuuviRawE1),
+    E1(RuuviRawV6),
 }
 
 impl RuuviRaw {
-    pub fn measurement_seq(&self) -> u32 {
+    pub fn measurement_seq(&self) -> u16 {
         match self {
-            Self::E1(e1) => e1.measurement_seq,
-            Self::V2(v2) => v2.measurement_seq as u32,
+            Self::E1(e1) => e1.measurement_seq as u16,
+            Self::V2(v2) => v2.measurement_seq,
         }
     }
 
     pub fn mac(&self) -> [u8; 6] {
         match self {
-            Self::E1(e1) => e1.mac,
+            Self::E1(e1) => [e1.half_mac[0], e1.half_mac[1], e1.half_mac[2], 0, 0, 0],
             Self::V2(v2) => v2.mac,
         }
     }
@@ -96,44 +94,36 @@ pub fn parse_ruuvi_raw(data: &[u8]) -> Result<RuuviRaw, ParseError> {
         return Err(ParseError::TooShort);
     };
 
-    if *format == 0xE1 {
-        if data.len() < 40 {
+    if *format == 0x6 {
+        if data.len() < 20 {
             return Err(ParseError::TooShort);
         }
         let temp = i16::from_be_bytes([data[1], data[2]]);
         let humidity = u16::from_be_bytes([data[3], data[4]]);
         let pressure = u16::from_be_bytes([data[5], data[6]]);
-        let pm1_0 = u16::from_be_bytes([data[7], data[8]]);
-        let pm2_5 = u16::from_be_bytes([data[9], data[10]]);
-        let pm4_0 = u16::from_be_bytes([data[11], data[12]]);
-        let pm10_0 = u16::from_be_bytes([data[13], data[14]]);
-        let co2 = u16::from_be_bytes([data[15], data[16]]);
-        let flags = data[28];
-
-        // https://docs.ruuvi.com/communication/bluetooth-advertisements/data-format-e1
-        // Check later
-        let voc_index = ((data[17] as u16) << 1) | ((flags >> 6) & 0x01) as u16;
-        let nox_index = ((data[18] as u16) << 1) | ((flags >> 7) & 0x01) as u16;
-        let luminosity = ((data[19] as u32) << 16) | ((data[20] as u32) << 8) | (data[21] as u32);
-        let measurement_seq =
-            ((data[25] as u32) << 16) | ((data[26] as u32) << 8) | (data[27] as u32);
-        let mac = [data[34], data[35], data[36], data[37], data[38], data[39]];
-        return Ok(RuuviRaw::E1(RuuviRawE1 {
+        let pm2_5 = u16::from_be_bytes([data[7], data[8]]);
+        let co2 = u16::from_be_bytes([data[9], data[10]]);
+        let voc_index = ((data[11] as u16) << 1) | ((data[16] >> 6) & 0x01) as u16;
+        let nox_index = ((data[12] as u16) << 1) | ((data[16] >> 7) & 0x01) as u16;
+        let luminosity = data[13];
+        let reserved = data[14];
+        let measurement_seq = data[15];
+        let flags = data[16];
+        let mac = [data[17], data[18], data[19]];
+        return Ok(RuuviRaw::E1(RuuviRawV6 {
             format: *format,
             temp,
             humidity,
             pressure,
-            pm1_0,
             pm2_5,
-            pm4_0,
-            pm10_0,
             co2,
             voc_index,
             nox_index,
             luminosity,
+            reserved,
             measurement_seq,
             flags,
-            mac,
+            half_mac: mac,
             timestamp: None,
         }));
     }

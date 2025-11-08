@@ -3,6 +3,7 @@ use crate::schema::{RuuviRaw, RuuviRawV2, parse_ruuvi_raw};
 use bt_hci::param::LeAdvEventKind;
 use bt_hci::param::LeAdvReport;
 use core::cell::RefCell;
+use core::ops::Index;
 use embassy_futures::join::join;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Sender;
@@ -63,7 +64,7 @@ struct Handler {
     sender: Sender<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
     led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
     // Use interior mutability since, handler cannot access its mutable self
-    sequence_numbers: RefCell<FnvIndexMap<[u8; 6], u32, 16>>,
+    sequence_numbers: RefCell<FnvIndexMap<[u8; 6], u16, 16>>,
 }
 
 impl Handler {
@@ -78,12 +79,12 @@ impl Handler {
         }
     }
 
-    fn is_new_seq(&self, mac: [u8; 6], seq: u32) -> bool {
+    fn is_new_seq(&self, mac: [u8; 6], seq: u16) -> bool {
         let map = self.sequence_numbers.borrow();
         map.get(&mac).is_none_or(|prev_seq| *prev_seq != seq)
     }
 
-    fn upsert_seq(&self, mac: [u8; 6], seq: u32) {
+    fn upsert_seq(&self, mac: [u8; 6], seq: u16) {
         let mut map = self.sequence_numbers.borrow_mut();
         _ = map.insert(mac, seq).map_err(|(mac, seq_key)| {
             log::error!("Failed to insert key {mac:?}, value: {seq_key}")
@@ -91,7 +92,7 @@ impl Handler {
     }
 
     fn is_ruuvi_report(&self, report: LeAdvReport<'_>) -> bool {
-        // Ruuvi raw v2 data
+        // Ruuvi raw 16u16 data
         report.addr_kind == AddrKind::RANDOM
             && report.event_kind == LeAdvEventKind::AdvInd
             && report.data.len() >= 7
@@ -142,13 +143,24 @@ impl EventHandler for Handler {
                     }
                     Err(e) => log::error!("Payload error! {e:?}!"),
                 }
-            } else {
-                if report.data[5..7] == RUUVI_MAN_ID {
-                    let data_len = report.data[7..].len();
-                    log::info!("Saatiin ruuvidataa: {data_len}");
-                    log::info!("data format: {:X?}", report.data[7]);
-                }
-                log::info!("Muuta dataa");
+            } else if report.data.windows(2).any(|w| w == RUUVI_MAN_ID) {
+                let data_len = report.data[11..].len();
+                let loc = report
+                    .data
+                    .windows(2)
+                    .enumerate()
+                    .filter(|(_, w)| *w == RUUVI_MAN_ID)
+                    .map(|(i, _)| i)
+                    .next()
+                    .map(|v| v + 2);
+                log::info!("Saatiin ruuvidataa: {data_len}");
+                log::info!("Ruuvi manufacturer's ID at: {loc:?}");
+                log::info!("data format: {:X?}", report.data[11]);
+                log::info!("report addr_kind: {:?}", report.addr_kind);
+                log::info!("report addr_kind: {:?}", report.event_kind);
+
+                // INFO - report addr_kind: AddrKind(1)
+                // INFO - report addr_kind: AdvInd
             }
         }
     }
