@@ -1,6 +1,6 @@
 mod database;
 
-use crate::database::insert_data;
+use crate::database::{insert_data_e1, insert_data_v2};
 use chrono::{DateTime, Utc};
 use dotenvy_macro::dotenv;
 use serde::Deserialize;
@@ -26,10 +26,32 @@ const PSK_KEY: [u8; 32] = {
     const_str::to_byte_array!(AUTH_KEY)
 };
 
-#[repr(C)]
-#[derive(Debug, Deserialize)]
+fn calculate_abs_humidity(temp: f32, rel_humidity: f32) -> f64 {
+    // https://en.wikipedia.org/wiki/Arden_Buck_equation
+    // TODO use enhancement factor
+
+    // Saturation vapor pressure in hPa
+    let ps_hpa = 6.1121f64
+        * ((18.678f64 - (temp as f64 / 234.5)) * (temp as f64 / (257.14 + temp as f64))).exp();
+    // In Pa
+    let ps = ps_hpa * 100.0;
+    // Actual vapor pressure
+    let pa = ps * (rel_humidity as f64 / 100.0);
+    // Absolute humidity in g/m^3
+    2.167 * pa / (temp as f64 + 273.15)
+}
+
+fn calculate_dew_pont(temp: f32, rel_humidity: f32) -> f64 {
+    // https://en.wikipedia.org/wiki/Tetens_equation
+    // https://en.wikipedia.org/wiki/Clausius%E2%80%93Clapeyron_relation#August%E2%80%93Roche%E2%80%93Magnus_approximation
+    let a = 17.625f64;
+    let b = 243.04f64;
+    let gamma = (rel_humidity as f64 / 100.0).ln() + (a * temp as f64) / (b + temp as f64);
+    (b * gamma) / (a - gamma)
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct RuuviRawV2 {
-    pub format: u8,             // 0
     pub temp: i16,              // 1-2
     pub humidity: u16,          // 3-4
     pub pressure: u16,          // 5-6
@@ -43,7 +65,32 @@ pub struct RuuviRawV2 {
     pub timestamp: Option<u64>, // Added field
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct RuuviRawE1 {
+    pub temp: i16,            // 1-2 raw, 0.005 °C units
+    pub humidity: u16,        // 3-4 raw, 0.0025 % units
+    pub pressure: u16,        // 5-6 raw, Pa with -50000 offset
+    pub pm1_0: u16,           // 7-8 raw, 0.1 µg/m³
+    pub pm2_5: u16,           // 9-10 raw, 0.1 µg/m³
+    pub pm4_0: u16,           // 11-12 raw, 0.1 µg/m³
+    pub pm10_0: u16,          // 13-14 raw, 0.1 µg/m³
+    pub co2: u16,             // 15-16 raw, ppm
+    pub voc_index: u16,       // 9-bit (byte17 << 1 | flags bit6)
+    pub nox_index: u16,       // 9-bit (byte18 << 1 | flags bit7)
+    pub luminosity: u32,      // 19-21 24-bit, 0.01 lux units
+    pub measurement_seq: u32, // 25-27 24-bit counter
+    pub flags: u8,            // 28
+    pub mac: [u8; 6],         // 34-39
+    pub timestamp: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum RuuviRaw {
+    V2(RuuviRawV2),
+    E1(RuuviRawE1),
+}
+
+#[derive(Debug, Clone)]
 pub struct RuuviV2 {
     pub mac: [u8; 6],
     pub temp: f32,
@@ -61,31 +108,34 @@ pub struct RuuviV2 {
     pub timestamp: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RuuviE1 {
+    pub mac: [u8; 6],
+    pub temp: f32,
+    pub dew_point_temp: f64,
+    pub rel_humidity: f32,
+    pub abs_humidity: f64,
+    pub abs_pressure: u32,
+    pub pm1_0: f32,
+    pub pm2_5: f32,
+    pub pm4_0: f32,
+    pub pm10_0: f32,
+    pub co2: u16,
+    pub voc_index: u16,
+    pub nox_index: u16,
+    pub luminosity: f32,
+    pub measurement_seq: u32,
+    pub flags: u8,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Ruuvi {
+    V2(RuuviV2),
+    E1(RuuviE1),
+}
+
 impl RuuviV2 {
-    fn calculate_abs_humidity(temp: f32, rel_humidity: f32) -> f64 {
-        // https://en.wikipedia.org/wiki/Arden_Buck_equation
-        // TODO use enhancement factor
-
-        // Saturation vapor pressure in hPa
-        let ps_hpa = 6.1121f64
-            * ((18.678f64 - (temp as f64 / 234.5)) * (temp as f64 / (257.14 + temp as f64))).exp();
-        // In Pa
-        let ps = ps_hpa * 100.0;
-        // Actual vapor pressure
-        let pa = ps * (rel_humidity as f64 / 100.0);
-        // Absolute humidity in g/m^3
-        2.167 * pa / (temp as f64 + 273.15)
-    }
-
-    fn calculate_dew_pont(temp: f32, rel_humidity: f32) -> f64 {
-        // https://en.wikipedia.org/wiki/Tetens_equation
-        // https://en.wikipedia.org/wiki/Clausius%E2%80%93Clapeyron_relation#August%E2%80%93Roche%E2%80%93Magnus_approximation
-        let a = 17.625f64;
-        let b = 243.04f64;
-        let gamma = (rel_humidity as f64 / 100.0).ln() + (a * temp as f64) / (b + temp as f64);
-        (b * gamma) / (a - gamma)
-    }
-
     fn from_raw(raw: RuuviRawV2, fallback_dt: DateTime<Utc>) -> Self {
         // https://docs.ruuvi.com/communication/bluetooth-advertisements/data-format-5-rawv2
         // Temperature in 0.005 degrees
@@ -99,9 +149,9 @@ impl RuuviV2 {
         // Last 5 bits are for TX power. -40dBm - +20dBm
         let tx_power = (raw.power_info & 0b11111) as i8 * 2 - 40;
         // Abs humidity
-        let abs_humidity = Self::calculate_abs_humidity(temp, rel_humidity);
+        let abs_humidity = calculate_abs_humidity(temp, rel_humidity);
         // Dew point temp
-        let dew_point_temp = Self::calculate_dew_pont(temp, rel_humidity);
+        let dew_point_temp = calculate_dew_pont(temp, rel_humidity);
 
         let timestamp = DateTime::from_timestamp_millis(raw.timestamp.unwrap_or(0) as i64)
             .unwrap_or_else(|| {
@@ -123,6 +173,65 @@ impl RuuviV2 {
             tx_power,
             movement_counter: raw.movement_counter,
             measurement_seq: raw.measurement_seq,
+            timestamp,
+        }
+    }
+}
+
+impl RuuviE1 {
+    fn from_raw(raw: RuuviRawE1, fallback_dt: DateTime<Utc>) -> Self {
+        // https://docs.ruuvi.com/communication/bluetooth-advertisements/data-format-e1
+        // Temperature in 0.005 degrees
+        let temp = raw.temp as f32 * 0.005;
+        // Humidity in 0.0025%. 0-163.83% range, though realistically 0-100%
+        let rel_humidity = f32::min(raw.humidity as f32 * 0.0025, 100f32);
+        // Pressure offset -50 000 Pa
+        let abs_pressure = raw.pressure as u32 + 50_000;
+
+        let dew_point_temp = calculate_dew_pont(temp, rel_humidity);
+        let abs_humidity = calculate_abs_humidity(temp, rel_humidity);
+
+        // Resolution 0.1/bit, range 0 ... 1000. 16bit unsigned
+        let pm = |v: u16| f32::min(v as f32 * 0.1, 1000f32);
+        let pm1_0 = pm(raw.pm1_0);
+        let pm2_5 = pm(raw.pm2_5);
+        let pm4_0 = pm(raw.pm4_0);
+        let pm10_0 = pm(raw.pm10_0);
+
+        // CO2 concentration, ppm. Resolution 1/bit, range 0 ... 40000. 16bit unsigned
+        let co2 = u16::min(raw.co2, 40_000);
+
+        // VOC index, unitless. Resolution 1 / bit, range 0 ... 500. 9 bit unsigned, least significant bit in Flags byte
+        let voc_index = u16::min(raw.voc_index, 500);
+        // NOX index, unitless. Resolution 1 / bit, range 0 ... 500. 9 bit unsigned, least significant bit in Flags byte
+        let nox_index = u16::min(raw.nox_index, 500);
+
+        // Luminosity
+        let luminosity = f32::min(raw.luminosity as f32 * 0.01, 144_284f32);
+
+        let timestamp = DateTime::from_timestamp_millis(raw.timestamp.unwrap_or(0) as i64)
+            .unwrap_or_else(|| {
+                tracing::warn!("Failed to parse timestamp");
+                fallback_dt
+            });
+
+        Self {
+            mac: raw.mac,
+            temp,
+            dew_point_temp,
+            rel_humidity,
+            abs_humidity,
+            abs_pressure,
+            pm1_0,
+            pm2_5,
+            pm4_0,
+            pm10_0,
+            co2,
+            voc_index,
+            nox_index,
+            luminosity,
+            measurement_seq: raw.measurement_seq,
+            flags: raw.flags,
             timestamp,
         }
     }
@@ -194,15 +303,28 @@ async fn handle_conn(
                 let len = transport.read_message(&rx_buffer[..len], &mut noise_buf)?;
 
                 // Postcard deserialize
-                let data = postcard::from_bytes::<RuuviRawV2>(&noise_buf[..len]);
+                let data = postcard::from_bytes::<RuuviRaw>(&noise_buf[..len]);
 
                 match data {
                     Ok(raw) => {
-                        let ruuvi_data = RuuviV2::from_raw(raw, fallback_dt);
-                        tracing::debug!("Data: {ruuvi_data:?}");
-                        if let Err(e) = insert_data(&pool, ruuvi_data).await {
-                            tracing::error!("Failed insert data: {e}");
+                        match raw {
+                            RuuviRaw::E1(e1) => {
+                                let ruuvi_data = RuuviE1::from_raw(e1, fallback_dt);
+                                tracing::debug!("Data: {ruuvi_data:?}");
+                                if let Err(e) = insert_data_e1(&pool, ruuvi_data).await {
+                                    tracing::error!("Failed to insert E1 data: {e}");
+                                }
+                            }
+                            RuuviRaw::V2(v2) => {
+                                let ruuvi_data = RuuviV2::from_raw(v2, fallback_dt);
+                                tracing::debug!("Data: {ruuvi_data:?}");
+                                if let Err(e) = insert_data_v2(&pool, ruuvi_data).await {
+                                    tracing::error!("Failed insert V2 data: {e}");
+                                }
+                            }
                         }
+
+                        continue;
                     }
                     Err(err) => tracing::error!("Failed to parse ruuvidata: {err}"),
                 }

@@ -1,6 +1,6 @@
 use crate::config::GatewayConfig;
 use crate::led::LedEvent;
-use crate::schema::RuuviRawV2;
+use crate::schema::RuuviRaw;
 use alloc::boxed::Box;
 use anyhow::anyhow;
 use embassy_net::{Stack, tcp::TcpSocket};
@@ -195,7 +195,7 @@ async fn sync_time(
 #[embassy_executor::task]
 pub async fn run(
     stack: Stack<'static>,
-    receiver: Receiver<'static, NoopRawMutex, (RuuviRawV2, Instant), 16>,
+    receiver: Receiver<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
     gateway_config: GatewayConfig,
     rng: Rng,
     led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
@@ -290,10 +290,10 @@ pub async fn run(
             if let Some((ref_t, ref_ts)) = time_reference {
                 if t >= ref_t {
                     let elapsed = t.saturating_duration_since(ref_t);
-                    pkt.timestamp = Some(ref_ts + elapsed.as_millis());
+                    pkt.set_timestamp(Some(ref_ts + elapsed.as_millis()));
                 } else {
                     let elapsed = ref_t.saturating_duration_since(t);
-                    pkt.timestamp = Some(ref_ts - elapsed.as_millis());
+                    pkt.set_timestamp(Some(ref_ts - elapsed.as_millis()));
                 }
             }
 
