@@ -1,0 +1,11 @@
+[package]
+name = "ruuvi-schema"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+serde = { version = "1.0.228", default-features = false, features = ["derive"] }

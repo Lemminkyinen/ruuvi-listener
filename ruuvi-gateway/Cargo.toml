@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ruuvi-schema = {path = "../ruuvi-schema"}
 dotenvy_macro = "0.15.7"
 postcard = "1.1.3"
 tokio = { version = "1.47.1", features = ["full"] }

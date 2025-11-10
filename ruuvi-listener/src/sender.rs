@@ -1,6 +1,5 @@
 use crate::config::GatewayConfig;
 use crate::led::LedEvent;
-use crate::schema::RuuviRaw;
 use alloc::boxed::Box;
 use anyhow::anyhow;
 use embassy_net::{Stack, tcp::TcpSocket};
@@ -10,6 +9,7 @@ use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_io_async::{Read, Write};
 use esp_hal::rng::Rng;
+use ruuvi_schema::RuuviRaw;
 use snow::params::{CipherChoice, DHChoice, HashChoice};
 use snow::resolvers::{CryptoResolver, DefaultResolver};
 use snow::types::Dh;

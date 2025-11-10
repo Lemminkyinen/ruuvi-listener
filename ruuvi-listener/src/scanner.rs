@@ -1,5 +1,5 @@
 use crate::led::LedEvent;
-use crate::schema::{RuuviRaw, parse_ruuvi_raw};
+use crate::schema::parse_ruuvi_raw;
 use bt_hci::param::LeExtAdvReport;
 use core::cell::RefCell;
 use embassy_futures::join::join;
@@ -9,6 +9,7 @@ use embassy_time::Instant;
 use embassy_time::{Duration, Timer};
 use esp_wifi::ble::controller::BleConnector;
 use heapless::index_map::FnvIndexMap;
+use ruuvi_schema::RuuviRaw;
 use trouble_host::prelude::*;
 
 const CONNECTIONS_MAX: usize = 1;

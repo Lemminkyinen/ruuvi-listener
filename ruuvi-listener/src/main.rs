@@ -18,12 +18,12 @@ extern crate alloc;
 use crate::config::{BoardConfig, GatewayConfig, WifiConfig};
 use crate::led::LedEvent;
 use crate::net::acquire_address;
-use crate::schema::RuuviRaw;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Instant;
 use esp_backtrace as _;
+use ruuvi_schema::RuuviRaw;
 use static_cell::StaticCell;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.

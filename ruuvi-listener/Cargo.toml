@@ -9,6 +9,7 @@ name = "ruuvi-listener"
 path = "./src/main.rs"
 
 [dependencies]
+ruuvi-schema = { path = "../ruuvi-schema", default-features = false}
 esp-bootloader-esp-idf = { version = "0.2.0", features = ["esp32s3"] }
 esp-hal = { version = "=1.0.0-rc.0", features = [
   "esp32s3",

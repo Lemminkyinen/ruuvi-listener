@@ -3,7 +3,7 @@ mod database;
 use crate::database::{insert_data_e1, insert_data_v2};
 use chrono::{DateTime, Utc};
 use dotenvy_macro::dotenv;
-use serde::Deserialize;
+use ruuvi_schema::{RuuviRaw, RuuviRawE1, RuuviRawV2};
 use snow::Builder;
 use snow::params::NoiseParams;
 use sqlx::postgres::PgPoolOptions;
@@ -48,46 +48,6 @@ fn calculate_dew_pont(temp: f32, rel_humidity: f32) -> f64 {
     let b = 243.04f64;
     let gamma = (rel_humidity as f64 / 100.0).ln() + (a * temp as f64) / (b + temp as f64);
     (b * gamma) / (a - gamma)
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct RuuviRawV2 {
-    pub temp: i16,              // 1-2
-    pub humidity: u16,          // 3-4
-    pub pressure: u16,          // 5-6
-    pub acc_x: i16,             // 7-8
-    pub acc_y: i16,             // 9-10
-    pub acc_z: i16,             // 11-12
-    pub power_info: u16,        // 13-14
-    pub movement_counter: u8,   // 15
-    pub measurement_seq: u16,   // 16-17
-    pub mac: [u8; 6],           // 18-23
-    pub timestamp: Option<u64>, // Added field
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct RuuviRawE1 {
-    pub temp: i16,            // 1-2 raw, 0.005 °C units
-    pub humidity: u16,        // 3-4 raw, 0.0025 % units
-    pub pressure: u16,        // 5-6 raw, Pa with -50000 offset
-    pub pm1_0: u16,           // 7-8 raw, 0.1 µg/m³
-    pub pm2_5: u16,           // 9-10 raw, 0.1 µg/m³
-    pub pm4_0: u16,           // 11-12 raw, 0.1 µg/m³
-    pub pm10_0: u16,          // 13-14 raw, 0.1 µg/m³
-    pub co2: u16,             // 15-16 raw, ppm
-    pub voc_index: u16,       // 9-bit (byte17 << 1 | flags bit6)
-    pub nox_index: u16,       // 9-bit (byte18 << 1 | flags bit7)
-    pub luminosity: u32,      // 19-21 24-bit, 0.01 lux units
-    pub measurement_seq: u32, // 25-27 24-bit counter
-    pub flags: u8,            // 28
-    pub mac: [u8; 6],         // 34-39
-    pub timestamp: Option<u64>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub enum RuuviRaw {
-    V2(RuuviRawV2),
-    E1(RuuviRawE1),
 }
 
 #[derive(Debug, Clone)]
