@@ -59,7 +59,7 @@ pub async fn insert_data_v2(pool: &Pool<Postgres>, data: RuuviV2) -> Result<(), 
     .bind(data.measurement_seq as i32)
     .bind(data.abs_humidity as f32)
     .bind(data.dew_point_temp as f32)
-    .bind(None::<i16>)
+    .bind(data.rssi as i16)
     .execute(pool)
     .await?;
     Ok(())
@@ -136,8 +136,8 @@ pub async fn insert_data_e1(pool: &Pool<Postgres>, data: RuuviE1) -> Result<(), 
     .bind(data.luminosity)
     .bind(data.measurement_seq as i32)
     .bind(data.flags as i16)
-    .bind(None::<i16>)
-    .bind(None::<i16>)
+    .bind(data.tx_power as i16)
+    .bind(data.rssi as i16)
     .execute(pool)
     .await?;
     Ok(())

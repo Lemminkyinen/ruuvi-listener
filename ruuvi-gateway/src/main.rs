@@ -66,6 +66,7 @@ pub struct RuuviV2 {
     pub movement_counter: u8,
     pub measurement_seq: u16,
     pub timestamp: DateTime<Utc>,
+    pub rssi: i8,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +88,8 @@ pub struct RuuviE1 {
     pub measurement_seq: u32,
     pub flags: u8,
     pub timestamp: DateTime<Utc>,
+    pub tx_power: i8,
+    pub rssi: i8,
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +137,7 @@ impl RuuviV2 {
             movement_counter: raw.movement_counter,
             measurement_seq: raw.measurement_seq,
             timestamp,
+            rssi: raw.rssi,
         }
     }
 }
@@ -193,6 +197,8 @@ impl RuuviE1 {
             measurement_seq: raw.measurement_seq,
             flags: raw.flags,
             timestamp,
+            tx_power: raw.tx_power,
+            rssi: raw.rssi,
         }
     }
 }

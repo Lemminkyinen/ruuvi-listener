@@ -6,7 +6,12 @@ pub enum ParseError {
     UnknownFormat(u8),
 }
 
-pub fn parse_ruuvi_raw(data_format: u8, data: &[u8]) -> Result<RuuviRaw, ParseError> {
+pub fn parse_ruuvi_raw(
+    data_format: u8,
+    data: &[u8],
+    rssi: i8,
+    tx_power: i8,
+) -> Result<RuuviRaw, ParseError> {
     match data_format {
         0xE1 => {
             if data.len() < 40 {
@@ -47,6 +52,8 @@ pub fn parse_ruuvi_raw(data_format: u8, data: &[u8]) -> Result<RuuviRaw, ParseEr
                 flags,
                 mac,
                 None,
+                rssi,
+                tx_power,
             )))
         }
         0x5 => {
@@ -66,6 +73,7 @@ pub fn parse_ruuvi_raw(data_format: u8, data: &[u8]) -> Result<RuuviRaw, ParseEr
                 u16::from_be_bytes([data[16], data[17]]),
                 [data[18], data[19], data[20], data[21], data[22], data[23]],
                 None,
+                rssi,
             )))
         }
         _ => Err(ParseError::UnknownFormat(data_format)),

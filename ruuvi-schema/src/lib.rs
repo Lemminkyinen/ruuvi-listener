@@ -4,17 +4,19 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuuviRawV2 {
-    pub temp: i16,              // 1-2
-    pub humidity: u16,          // 3-4
-    pub pressure: u16,          // 5-6
-    pub acc_x: i16,             // 7-8
-    pub acc_y: i16,             // 9-10
-    pub acc_z: i16,             // 11-12
-    pub power_info: u16,        // 13-14
-    pub movement_counter: u8,   // 15
-    pub measurement_seq: u16,   // 16-17
-    pub mac: [u8; 6],           // 18-23
-    pub timestamp: Option<u64>, // Added field
+    pub temp: i16,            // 1-2
+    pub humidity: u16,        // 3-4
+    pub pressure: u16,        // 5-6
+    pub acc_x: i16,           // 7-8
+    pub acc_y: i16,           // 9-10
+    pub acc_z: i16,           // 11-12
+    pub power_info: u16,      // 13-14
+    pub movement_counter: u8, // 15
+    pub measurement_seq: u16, // 16-17
+    pub mac: [u8; 6],         // 18-23
+    // Added fields
+    pub timestamp: Option<u64>,
+    pub rssi: i8,
 }
 
 impl RuuviRawV2 {
@@ -30,6 +32,7 @@ impl RuuviRawV2 {
         measurement_seq: u16,
         mac: [u8; 6],
         timestamp: Option<u64>,
+        rssi: i8,
     ) -> Self {
         Self {
             temp,
@@ -43,6 +46,7 @@ impl RuuviRawV2 {
             measurement_seq,
             mac,
             timestamp,
+            rssi,
         }
     }
 }
@@ -63,7 +67,10 @@ pub struct RuuviRawE1 {
     pub measurement_seq: u32, // 25-27 24-bit counter
     pub flags: u8,            // 28
     pub mac: [u8; 6],         // 34-39
+    // Added fields
     pub timestamp: Option<u64>,
+    pub rssi: i8,
+    pub tx_power: i8,
 }
 
 impl RuuviRawE1 {
@@ -83,6 +90,8 @@ impl RuuviRawE1 {
         flags: u8,
         mac: [u8; 6],
         timestamp: Option<u64>,
+        rssi: i8,
+        tx_power: i8,
     ) -> Self {
         Self {
             temp,
@@ -100,6 +109,8 @@ impl RuuviRawE1 {
             flags,
             mac,
             timestamp,
+            rssi,
+            tx_power,
         }
     }
 }

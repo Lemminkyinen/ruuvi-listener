@@ -116,16 +116,15 @@ impl EventHandler for Handler {
     fn on_ext_adv_reports(&self, mut reports: LeExtAdvReportsIter) {
         while let Some(Ok(report)) = reports.next() {
             if let Some((data_format, index)) = Self::extract_ruuvi_format(report) {
-                // TODO: Add rssi and tx_power to the payload
-                let _rssi = report.rssi;
-                let _tx_power = report.tx_power;
+                let rssi = report.rssi;
+                let tx_power = report.tx_power;
 
                 log::info!("Data format: {data_format:X?}",);
                 log::info!("Data start at: {index}");
                 log::info!("Data len: {}", report.data[index..].len());
 
                 let t = Instant::now();
-                match parse_ruuvi_raw(data_format, &report.data[index..]) {
+                match parse_ruuvi_raw(data_format, &report.data[index..], rssi, tx_power) {
                     Ok(parsed) => {
                         // If channel is full, empty it
                         if self.sender.is_full() {
