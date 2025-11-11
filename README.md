@@ -1,9 +1,11 @@
 # RuuviTag BLE Scanner for ESP32S3
 
-### Components
-- Ruuvi Listener: ESP32S3 baremetal firmware that scans BLE advertisements from Ruuvi tags and forwards data over TCP to the gateway. TCP connection is encrypted with `noise` protocol framework.
-- Ruuvi Gateway: Server that receives encrypted sensor data from listeners (TODO and saves the data into a database)
+Supports currently Ruuvi 5 (tag) and Ruuvi E1 (air) formats. 
 
+### Components
+- ruuvi-listener: ESP32S3 baremetal firmware that scans BLE extended advertisements from Ruuvi air and tags. Then forwards data over TCP to the gateway. TCP connection is encrypted with `noise` protocol framework.
+- ruuvi-gateway: Server that receives encrypted sensor data from listeners and saves the data into a database
+- ruuvi-schema: Common schemas for the project. 
 
 ### Prerequisites:
 
