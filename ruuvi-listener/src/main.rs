@@ -19,10 +19,13 @@ use crate::config::{BoardConfig, GatewayConfig, WifiConfig};
 use crate::led::LedEvent;
 use crate::net::acquire_address;
 use embassy_executor::Spawner;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_time::Instant;
 use esp_backtrace as _;
+use esp_hal::interrupt::software::SoftwareInterrupt;
+use esp_hal::{interrupt::software::SoftwareInterruptControl, system::Stack};
+use esp_rtos::embassy::Executor;
 use ruuvi_schema::RuuviRaw;
 use static_cell::StaticCell;
 
@@ -31,8 +34,9 @@ use static_cell::StaticCell;
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static CHANNEL: StaticCell<Channel<NoopRawMutex, (RuuviRaw, Instant), 16>> = StaticCell::new();
-static LED_CHANNEL: StaticCell<Channel<NoopRawMutex, LedEvent, 16>> = StaticCell::new();
 static BOARD_CONFIG: StaticCell<BoardConfig> = StaticCell::new();
+static SECOND_CORE_STACK: StaticCell<Stack<8192>> = StaticCell::new();
+static LED_CHANNEL: StaticCell<Channel<CriticalSectionRawMutex, LedEvent, 16>> = StaticCell::new();
 
 // Constant configs
 const WIFI_CONFIG: WifiConfig = WifiConfig::new();
@@ -42,9 +46,10 @@ const GATEWAY_CONFIG: GatewayConfig = GatewayConfig::new();
 async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
 
-    let board_config = BOARD_CONFIG.init(board::init());
-    let (stack, runner) = net::init_network_stack(board_config);
+    let peripherals = board::init_peripherals();
+    let board_config = BOARD_CONFIG.init(board::init(peripherals));
 
+    let (net_stack, runner) = net::init_network_stack(board_config);
     spawner
         .spawn(net::connection(
             board_config
@@ -58,25 +63,41 @@ async fn main(spawner: Spawner) {
         .spawn(net::run_stack(runner))
         .expect("Failed to spawn network runner task!");
 
-    acquire_address(stack).await;
+    acquire_address(net_stack).await;
 
-    // Run LED task for user feedback
-    let led = board_config.led.take().unwrap();
     // Initialize a bounded channel of LED events
     let led_channel = &*LED_CHANNEL.init(Channel::new());
     let led_sender = led_channel.sender();
     let led_sender2 = led_sender;
-    let receiver = led_channel.receiver();
-    spawner
-        .spawn(led::task(led, receiver))
-        .expect("Failed to spawn led task!");
+    let led_receiver = led_channel.receiver();
 
     // Initialize a bounded channel of Ruuvi packets
     let channel = &*CHANNEL.init(Channel::new());
     let sender = channel.sender();
     let receiver = channel.receiver();
 
-    // Run BLE ad scanner
+    // Start the other core. For now only the LED task, since network stack cannot be shared?
+    let app_core_stack = SECOND_CORE_STACK.init(Stack::new());
+    let cpu_ctrl = board_config.cpu_ctrl.take().unwrap();
+    let sw_int = SoftwareInterruptControl::new(board_config.sw_interrupt.take().unwrap());
+    let int0: SoftwareInterrupt<'static, 0> = sw_int.software_interrupt0;
+    let int1: SoftwareInterrupt<'static, 1> = sw_int.software_interrupt1;
+    let rmt = board_config.rmt.take().unwrap();
+    let gpio48 = board_config.gpio48.take().unwrap();
+    esp_rtos::start_second_core(cpu_ctrl, int0, int1, app_core_stack, move || {
+        static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+        let executor = EXECUTOR.init(Executor::new());
+        let led = board::init_led(rmt, gpio48);
+
+        // Run LED task for user feedback
+        executor.run(|spawner| {
+            spawner
+                .spawn(led::task(led, led_receiver))
+                .expect("Failed to spawn led task!");
+        });
+    });
+
+    // Run BLE ad scanner task
     spawner
         .spawn(scanner::run(
             board_config
@@ -88,10 +109,10 @@ async fn main(spawner: Spawner) {
         ))
         .expect("Failed to spawn BLE scanner!");
 
-    // Run TCP packet sender
+    // Run TCP packet sender task
     spawner
         .spawn(sender::run(
-            stack,
+            net_stack,
             receiver,
             GATEWAY_CONFIG,
             board_config.rng,

@@ -3,6 +3,7 @@ use crate::led::LedEvent;
 use alloc::boxed::Box;
 use anyhow::anyhow;
 use embassy_net::{Stack, tcp::TcpSocket};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Receiver;
 use embassy_sync::channel::Sender;
@@ -198,7 +199,7 @@ pub async fn run(
     receiver: Receiver<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
     gateway_config: GatewayConfig,
     rng: Rng,
-    led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
+    led_sender: Sender<'static, CriticalSectionRawMutex, LedEvent, 16>,
 ) {
     // Buffers
     let mut socket_rx_buffer = [0u8; 2048];
