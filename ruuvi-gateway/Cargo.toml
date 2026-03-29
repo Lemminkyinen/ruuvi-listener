@@ -7,17 +7,17 @@ edition = "2024"
 ruuvi-schema = {path = "../ruuvi-schema"}
 dotenvy_macro = "0.15.7"
 postcard = "1.1.3"
-tokio = { version = "1.47.1", features = ["full"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-serde = { version = "1.0.225", features = ["derive"] }
+tokio = { version = "1.50.0", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+serde = { version = "1.0.228", features = ["derive"] }
 snow = { version = "0.10.0", features = [
     "default-resolver",
     "use-chacha20poly1305",
     "use-curve25519",
     "use-sha2",
 ] }
-const-str = "0.7.0"
-anyhow = "1.0.100"
+const-str = "1.1.0"
+anyhow = "1.0.102"
 sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio", "chrono", "mac_address"] }
-chrono = "0.4.42"
+chrono = "0.4.44"

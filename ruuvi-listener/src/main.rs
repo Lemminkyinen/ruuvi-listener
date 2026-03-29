@@ -38,7 +38,7 @@ static BOARD_CONFIG: StaticCell<BoardConfig> = StaticCell::new();
 const WIFI_CONFIG: WifiConfig = WifiConfig::new();
 const GATEWAY_CONFIG: GatewayConfig = GatewayConfig::new();
 
-#[esp_hal_embassy::main]
+#[esp_rtos::main]
 async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
 

@@ -2,8 +2,8 @@ use crate::config::{BoardConfig, WifiConfig};
 use embassy_net::{Runner, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
-use esp_wifi::wifi::{
-    ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState,
+use esp_radio::wifi::{
+    ClientConfig, ModeConfig, ScanConfig, WifiController, WifiDevice, WifiEvent, WifiStaState,
 };
 use static_cell::StaticCell;
 
@@ -27,24 +27,29 @@ pub async fn connection(mut controller: WifiController<'static>, config: WifiCon
     log::info!("Start connection task");
     log::info!("Device capabilities: {:?}", controller.capabilities());
     loop {
-        if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
+        if esp_radio::wifi::sta_state() == WifiStaState::Connected {
             // Wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
             Timer::after(Duration::from_millis(5000)).await
         }
         if !matches!(controller.is_started(), Ok(true)) {
-            let client_config = Configuration::Client(ClientConfiguration {
-                ssid: config.ssid.into(),
-                password: config.password.into(),
-                ..Default::default()
-            });
-            controller.set_configuration(&client_config).unwrap();
+            let client_config = ModeConfig::Client(
+                ClientConfig::default()
+                    .with_ssid(config.ssid.into())
+                    .with_password(config.password.into()),
+            );
+
+            controller.set_config(&client_config).unwrap();
             log::info!("Starting wifi");
             controller.start_async().await.unwrap();
             log::info!("Wifi started!");
 
             log::info!("Scan");
-            let result = controller.scan_n_async(10).await.unwrap();
+            let scan_config = ScanConfig::default().with_max(10);
+            let result = controller
+                .scan_with_config_async(scan_config)
+                .await
+                .unwrap();
             for ap in result {
                 log::info!("{ap:?}");
             }

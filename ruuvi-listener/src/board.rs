@@ -1,16 +1,15 @@
 use crate::config::BoardConfig;
 use bt_hci::controller::ExternalController;
 use esp_hal::clock::CpuClock;
-use esp_hal::rmt::Rmt;
+use esp_hal::rmt::{PulseCode, Rmt};
 use esp_hal::time::Rate;
 use esp_hal::timer::systimer::SystemTimer;
-use esp_hal::timer::timg::TimerGroup;
 use esp_hal_smartled::{SmartLedsAdapterAsync, buffer_size_async};
-use esp_wifi::EspWifiController;
-use esp_wifi::ble::controller::BleConnector;
+use esp_radio::ble::controller::BleConnector;
 use static_cell::StaticCell;
 
-static ESP_WIFI_CONTROLLER: StaticCell<EspWifiController<'static>> = StaticCell::new();
+static RMT_BUF: StaticCell<[PulseCode; buffer_size_async(1)]> = StaticCell::new();
+static RADIO: StaticCell<esp_radio::Controller<'static>> = StaticCell::new();
 
 pub fn init() -> BoardConfig {
     // find more examples https://github.com/embassy-rs/trouble/tree/main/examples/esp32
@@ -36,29 +35,27 @@ pub fn init() -> BoardConfig {
 
     // Use an RMT channel to instantiate a SmartLedsAdapterAsync
     let rmt_channel = rmt.channel0;
-    let rmt_buffer = [0_u32; buffer_size_async(1)];
-    let led: SmartLedsAdapterAsync<_, 25> =
+    let rmt_buffer = RMT_BUF.init([PulseCode::end_marker(); buffer_size_async(1)]);
+    let led: SmartLedsAdapterAsync<'static, 25> =
         SmartLedsAdapterAsync::new(rmt_channel, peripherals.GPIO48, rmt_buffer);
     log::info!("Smart LED adapter initialized!");
 
     let timer0 = SystemTimer::new(peripherals.SYSTIMER);
-    esp_hal_embassy::init(timer0.alarm0);
-    log::info!("Embassy initialized!");
+    esp_rtos::start(timer0.alarm0);
+    log::info!("RTOS initialized!");
 
-    let timer1 = TimerGroup::new(peripherals.TIMG0);
-    log::info!("Timer initialized!");
-
-    let rng = esp_hal::rng::Rng::new(peripherals.RNG);
+    let rng = esp_hal::rng::Rng::new();
     log::info!("RNG initialized!");
 
-    let esp_wifi_ctrl = ESP_WIFI_CONTROLLER.init(
-        esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller"),
-    );
-    let (wifi_controller, interfaces) = esp_wifi::wifi::new(esp_wifi_ctrl, peripherals.WIFI)
-        .expect("Failed to initialize WIFI controller");
+    let radio = RADIO.init(esp_radio::init().expect("Failed to initialize radio"));
+
+    let (wifi_controller, interfaces) =
+        esp_radio::wifi::new(radio, peripherals.WIFI, Default::default())
+            .expect("Failed to initialize WIFI controller");
     log::info!("Wifi controller initialized!");
 
-    let transport = BleConnector::new(esp_wifi_ctrl, peripherals.BT);
+    let transport = BleConnector::new(radio, peripherals.BT, Default::default())
+        .expect("Failed to initialize BLE connector");
     let ble_controller: ExternalController<BleConnector<'static>, 20> =
         ExternalController::<_, 20>::new(transport);
 

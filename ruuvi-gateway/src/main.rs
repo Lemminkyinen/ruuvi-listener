@@ -319,7 +319,7 @@ async fn tcp_server(pool: sqlx::Pool<sqlx::Postgres>) -> Result<(), anyhow::Erro
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt()
-        .with_env_filter("info")
+        .with_env_filter("debug")
         .compact()
         .init();
 

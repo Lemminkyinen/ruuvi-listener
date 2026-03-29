@@ -7,7 +7,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Sender;
 use embassy_time::Instant;
 use embassy_time::{Duration, Timer};
-use esp_wifi::ble::controller::BleConnector;
+use esp_radio::ble::controller::BleConnector;
 use heapless::index_map::FnvIndexMap;
 use ruuvi_schema::RuuviRaw;
 use trouble_host::prelude::*;

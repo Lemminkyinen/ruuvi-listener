@@ -24,6 +24,7 @@ use sqlx::{Pool, Postgres};
 //  rssi                  | smallint                 |           |          |
 
 pub async fn insert_data_v2(pool: &Pool<Postgres>, data: RuuviV2) -> Result<(), anyhow::Error> {
+    return Ok(());
     sqlx::query::<Postgres>(
         r#"
         INSERT INTO tag_readings (
@@ -91,6 +92,7 @@ pub async fn insert_data_v2(pool: &Pool<Postgres>, data: RuuviV2) -> Result<(), 
 //  rssi                  | smallint                 |           |          |
 
 pub async fn insert_data_e1(pool: &Pool<Postgres>, data: RuuviE1) -> Result<(), anyhow::Error> {
+    return Ok(());
     sqlx::query::<Postgres>(
         r#"
         INSERT INTO air_readings (

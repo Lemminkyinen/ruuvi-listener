@@ -1,11 +1,10 @@
 use bt_hci::controller::ExternalController;
 use core::net::Ipv4Addr;
 use dotenvy_macro::dotenv;
-use esp_hal::rmt::{ConstChannelAccess, Tx};
 use esp_hal::rng::Rng;
 use esp_hal_smartled::SmartLedsAdapterAsync;
-use esp_wifi::ble::controller::BleConnector;
-use esp_wifi::wifi::{Interfaces, WifiController};
+use esp_radio::ble::controller::BleConnector;
+use esp_radio::wifi::{Interfaces, WifiController};
 
 pub const SSID: &str = dotenv!("SSID");
 pub const PASSWORD: &str = dotenv!("PASSWORD");
@@ -58,7 +57,7 @@ pub struct BoardConfig {
     pub wifi_controller: Option<WifiController<'static>>,
     pub interfaces: Option<Interfaces<'static>>,
     pub ble_controller: Option<ExternalController<BleConnector<'static>, 20>>,
-    pub led: Option<SmartLedsAdapterAsync<ConstChannelAccess<Tx, 0>, 25>>,
+    pub led: Option<SmartLedsAdapterAsync<'static, 25>>,
 }
 
 impl BoardConfig {
@@ -67,7 +66,7 @@ impl BoardConfig {
         wifi_controller: WifiController<'static>,
         interfaces: Interfaces<'static>,
         ble_controller: ExternalController<BleConnector<'static>, 20>,
-        led: Option<SmartLedsAdapterAsync<ConstChannelAccess<Tx, 0>, 25>>,
+        led: Option<SmartLedsAdapterAsync<'static, 25>>,
     ) -> Self {
         Self {
             rng,
