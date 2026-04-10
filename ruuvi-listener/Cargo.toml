@@ -11,7 +11,7 @@ path = "./src/main.rs"
 [dependencies]
 ruuvi-schema = { path = "../ruuvi-schema", default-features = false}
 
-esp-hal = { version = "~1.0", features = ["esp32s3", "log-04", "unstable"] }
+esp-hal = { version = "~1.0", features = ["esp32s3", "log-04", "unstable", "critical-section"] }
 esp-rtos = { version = "0.2.0", features = [
   "embassy",
   "esp-alloc",

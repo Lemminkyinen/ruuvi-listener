@@ -5,7 +5,7 @@ use esp_hal::peripherals;
 use esp_hal::peripherals::Peripherals;
 use esp_hal::rmt::{PulseCode, Rmt};
 use esp_hal::time::Rate;
-use esp_hal::timer::systimer::SystemTimer;
+use esp_hal::timer::timg::TimerGroup;
 use esp_hal_smartled::{SmartLedsAdapterAsync, buffer_size_async};
 use esp_radio::ble::controller::BleConnector;
 use static_cell::StaticCell;
@@ -29,8 +29,8 @@ pub fn init_peripherals() -> Peripherals {
 }
 
 pub fn init(peripherals: Peripherals) -> BoardConfig {
-    let timer0 = SystemTimer::new(peripherals.SYSTIMER);
-    esp_rtos::start(timer0.alarm0);
+    let timer0 = TimerGroup::new(peripherals.TIMG0);
+    esp_rtos::start(timer0.timer0);
     log::info!("RTOS initialized!");
 
     let rng = esp_hal::rng::Rng::new();
