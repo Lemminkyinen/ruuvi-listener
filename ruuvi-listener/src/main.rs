@@ -33,9 +33,11 @@ use static_cell::StaticCell;
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
+const CORE1_STACK_SIZE: usize = 8192 * 4;
+
 static CHANNEL: StaticCell<Channel<NoopRawMutex, (RuuviRaw, Instant), 16>> = StaticCell::new();
 static BOARD_CONFIG: StaticCell<BoardConfig> = StaticCell::new();
-static SECOND_CORE_STACK: StaticCell<Stack<8192>> = StaticCell::new();
+static SECOND_CORE_STACK: StaticCell<Stack<CORE1_STACK_SIZE>> = StaticCell::new();
 static LED_CHANNEL: StaticCell<Channel<CriticalSectionRawMutex, LedEvent, 16>> = StaticCell::new();
 
 // Constant configs
