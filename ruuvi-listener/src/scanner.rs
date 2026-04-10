@@ -143,6 +143,8 @@ impl EventHandler for Handler {
                         if !is_new {
                             if let Err(err) = self.led_sender.try_send(LedEvent::BleDuplicate) {
                                 log::error!("Failed to send LedEvent to the channel! {err:?}");
+                                log::error!("Clearing led channel!");
+                                self.led_sender.clear();
                             }
                             log::info!(
                                 "Old data received, skipping! mac: {mac:?}, seq: {measurement_seq}"
@@ -156,6 +158,8 @@ impl EventHandler for Handler {
                         }
                         if let Err(err) = self.led_sender.try_send(LedEvent::BleOk) {
                             log::error!("Failed to send LedEvent to the channel! {err:?}");
+                            log::error!("Clearing led channel!");
+                            self.led_sender.clear();
                         }
                     }
                     Err(e) => log::error!("Payload error! {e:?}!"),

@@ -22,7 +22,7 @@ pub fn init_peripherals() -> Peripherals {
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
     log::info!("2 x 64KiB heap allocated!");
 
-    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::default());
     let peripherals = esp_hal::init(config);
     log::info!("Esp-hal peripherals initialized!");
     peripherals

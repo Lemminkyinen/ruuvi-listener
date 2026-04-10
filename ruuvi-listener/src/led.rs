@@ -49,7 +49,7 @@ pub async fn task(
         // If a new event comes, set it to a variable and continue loop
         event = if let Ok(e) = receiver
             .receive()
-            .with_timeout(Duration::from_millis(80))
+            .with_timeout(Duration::from_millis(60))
             .await
         {
             Some(e)
