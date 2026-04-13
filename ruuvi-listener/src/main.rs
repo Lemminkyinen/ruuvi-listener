@@ -19,13 +19,10 @@ use crate::config::{BoardConfig, GatewayConfig, WifiConfig};
 use crate::led::LedEvent;
 use crate::net::acquire_address;
 use embassy_executor::Spawner;
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Instant;
 use esp_backtrace as _;
-use esp_hal::interrupt::software::{SoftwareInterrupt, SoftwareInterruptControl};
-use esp_hal::system::Stack;
-use esp_rtos::embassy::Executor;
 use ruuvi_schema::RuuviRaw;
 use static_cell::StaticCell;
 
@@ -33,12 +30,9 @@ use static_cell::StaticCell;
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
-const CORE1_STACK_SIZE: usize = 8192 * 4;
-
 static CHANNEL: StaticCell<Channel<NoopRawMutex, (RuuviRaw, Instant), 16>> = StaticCell::new();
 static BOARD_CONFIG: StaticCell<BoardConfig> = StaticCell::new();
-static SECOND_CORE_STACK: StaticCell<Stack<CORE1_STACK_SIZE>> = StaticCell::new();
-static LED_CHANNEL: StaticCell<Channel<CriticalSectionRawMutex, LedEvent, 16>> = StaticCell::new();
+static LED_CHANNEL: StaticCell<Channel<NoopRawMutex, LedEvent, 16>> = StaticCell::new();
 
 // Constant configs
 const WIFI_CONFIG: WifiConfig = WifiConfig::new();
@@ -78,26 +72,13 @@ async fn main(spawner: Spawner) {
     let sender = channel.sender();
     let receiver = channel.receiver();
 
-    // Start the other core. For now only the LED task, since network stack cannot be shared?
-    let app_core_stack = SECOND_CORE_STACK.init(Stack::new());
-    let cpu_ctrl = board_config.cpu_ctrl.take().unwrap();
-    let sw_int = SoftwareInterruptControl::new(board_config.sw_interrupt.take().unwrap());
-    let int0: SoftwareInterrupt<'static, 0> = sw_int.software_interrupt0;
-    let int1: SoftwareInterrupt<'static, 1> = sw_int.software_interrupt1;
+    // Run LED blinker task
     let rmt = board_config.rmt.take().unwrap();
     let gpio48 = board_config.gpio48.take().unwrap();
-    esp_rtos::start_second_core(cpu_ctrl, int0, int1, app_core_stack, move || {
-        static EXECUTOR: StaticCell<Executor> = StaticCell::new();
-        let executor = EXECUTOR.init(Executor::new());
-        let led = board::init_led(rmt, gpio48);
-
-        // Run LED task for user feedback
-        executor.run(|spawner| {
-            spawner
-                .spawn(led::task(led, led_receiver))
-                .expect("Failed to spawn led task!");
-        });
-    });
+    let led = board::init_led(rmt, gpio48);
+    spawner
+        .spawn(led::task(led, led_receiver))
+        .expect("Failed to spawn led task!");
 
     // Run BLE ad scanner task
     spawner

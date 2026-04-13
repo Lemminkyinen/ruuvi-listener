@@ -11,7 +11,7 @@ path = "./src/main.rs"
 [dependencies]
 ruuvi-schema = { path = "../ruuvi-schema", default-features = false}
 
-esp-hal = { version = "~1.0", features = ["esp32s3", "log-04", "unstable", "critical-section"] }
+esp-hal = { version = "~1.0", features = ["esp32s3", "log-04", "unstable"] }
 esp-rtos = { version = "0.2.0", features = [
   "embassy",
   "esp-alloc",
@@ -64,7 +64,6 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
   "socket-tcp",
   "socket-udp",
 ] }
-critical-section = "1.2.0"
 static_cell      = "2.1.1"
 heapless = "0.9.2"
 dotenvy_macro = "0.15.7"

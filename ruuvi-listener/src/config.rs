@@ -57,8 +57,6 @@ pub struct BoardConfig {
     pub wifi_controller: Option<WifiController<'static>>,
     pub interfaces: Option<Interfaces<'static>>,
     pub ble_controller: Option<ExternalController<BleConnector<'static>, 20>>,
-    pub cpu_ctrl: Option<peripherals::CPU_CTRL<'static>>,
-    pub sw_interrupt: Option<peripherals::SW_INTERRUPT<'static>>,
     pub rmt: Option<peripherals::RMT<'static>>,
     pub gpio48: Option<peripherals::GPIO48<'static>>,
 }
@@ -69,8 +67,6 @@ impl BoardConfig {
         wifi_controller: WifiController<'static>,
         interfaces: Interfaces<'static>,
         ble_controller: ExternalController<BleConnector<'static>, 20>,
-        cpu_ctrl: peripherals::CPU_CTRL<'static>,
-        sw_interrupt: peripherals::SW_INTERRUPT<'static>,
         rmt: peripherals::RMT<'static>,
         gpio48: peripherals::GPIO48<'static>,
     ) -> Self {
@@ -79,8 +75,6 @@ impl BoardConfig {
             wifi_controller: Some(wifi_controller),
             interfaces: Some(interfaces),
             ble_controller: Some(ble_controller),
-            cpu_ctrl: Some(cpu_ctrl),
-            sw_interrupt: Some(sw_interrupt),
             rmt: Some(rmt),
             gpio48: Some(gpio48),
         }
