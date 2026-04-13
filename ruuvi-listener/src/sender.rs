@@ -2,23 +2,18 @@ use crate::config::GatewayConfig;
 use crate::led::LedEvent;
 use alloc::boxed::Box;
 use anyhow::anyhow;
-use embassy_net::{Stack, tcp::TcpSocket};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_net::Stack;
+use embassy_net::tcp::TcpSocket;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::channel::Receiver;
-use embassy_sync::channel::Sender;
+use embassy_sync::channel::{Receiver, Sender};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_io_async::{Read, Write};
 use esp_hal::rng::Rng;
 use ruuvi_schema::RuuviRaw;
 use snow::params::{CipherChoice, DHChoice, HashChoice};
 use snow::resolvers::{CryptoResolver, DefaultResolver};
-use snow::types::Dh;
-use snow::{
-    Builder,
-    types::{Cipher, Hash, Random},
-};
-use snow::{HandshakeState, TransportState};
+use snow::types::{Cipher, Dh, Hash, Random};
+use snow::{Builder, HandshakeState, TransportState};
 
 const PARAMS: &str = "Noise_XXpsk3_25519_ChaChaPoly_SHA256";
 const BASE_BACKOFF_MS: u64 = 500;
@@ -199,7 +194,7 @@ pub async fn run(
     receiver: Receiver<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
     gateway_config: GatewayConfig,
     rng: Rng,
-    led_sender: Sender<'static, CriticalSectionRawMutex, LedEvent, 16>,
+    led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
 ) {
     // Buffers
     let mut socket_rx_buffer = [0u8; 2048];

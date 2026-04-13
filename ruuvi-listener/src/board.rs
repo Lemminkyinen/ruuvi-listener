@@ -55,8 +55,6 @@ pub fn init(peripherals: Peripherals) -> BoardConfig {
         wifi_controller,
         interfaces,
         ble_controller,
-        peripherals.CPU_CTRL,
-        peripherals.SW_INTERRUPT,
         peripherals.RMT,
         peripherals.GPIO48,
     )

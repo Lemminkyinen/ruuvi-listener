@@ -3,10 +3,9 @@ use crate::schema::parse_ruuvi_raw;
 use bt_hci::param::LeExtAdvReport;
 use core::cell::RefCell;
 use embassy_futures::join::join;
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Sender;
-use embassy_time::Instant;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_radio::ble::controller::BleConnector;
 use heapless::index_map::FnvIndexMap;
 use ruuvi_schema::RuuviRaw;
@@ -23,7 +22,7 @@ type DataIndex = usize;
 pub async fn run(
     controller: ExternalController<BleConnector<'static>, 20>,
     sender: Sender<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
-    led_sender: Sender<'static, CriticalSectionRawMutex, LedEvent, 16>,
+    led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
 ) {
     let address: Address = Address::random([0xB0, 0x0B, 0xCA, 0xFE, 0xB0, 0x0B]);
     log::info!("MAC address: {address:?}");
@@ -64,7 +63,7 @@ pub async fn run(
 
 struct Handler {
     sender: Sender<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
-    led_sender: Sender<'static, CriticalSectionRawMutex, LedEvent, 16>,
+    led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
     // Use interior mutability since, handler cannot access its mutable self
     sequence_numbers: RefCell<FnvIndexMap<[u8; 6], u32, 16>>,
 }
@@ -72,7 +71,7 @@ struct Handler {
 impl Handler {
     fn new(
         sender: Sender<'static, NoopRawMutex, (RuuviRaw, Instant), 16>,
-        led_sender: Sender<'static, CriticalSectionRawMutex, LedEvent, 16>,
+        led_sender: Sender<'static, NoopRawMutex, LedEvent, 16>,
     ) -> Self {
         Handler {
             sender,

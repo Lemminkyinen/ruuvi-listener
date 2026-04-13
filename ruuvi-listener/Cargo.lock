@@ -1744,7 +1744,6 @@ dependencies = [
  "anyhow",
  "bt-hci",
  "const-str",
- "critical-section",
  "dotenvy_macro",
  "embassy-executor",
  "embassy-futures",

@@ -64,7 +64,6 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
   "socket-tcp",
   "socket-udp",
 ] }
-critical-section = "1.2.0"
 static_cell      = "2.1.1"
 heapless = "0.9.2"
 dotenvy_macro = "0.15.7"

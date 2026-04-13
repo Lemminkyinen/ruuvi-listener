@@ -1,7 +1,6 @@
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Receiver;
-use embassy_time::Duration;
-use embassy_time::WithTimeout;
+use embassy_time::{Duration, WithTimeout};
 use esp_hal_smartled::SmartLedsAdapterAsync;
 use smart_leds::colors::{BLACK, BLUE, GREEN, RED};
 use smart_leds::{SmartLedsWriteAsync, brightness};
@@ -16,7 +15,7 @@ pub enum LedEvent {
 #[embassy_executor::task]
 pub async fn task(
     mut led: SmartLedsAdapterAsync<'static, 25>,
-    receiver: Receiver<'static, CriticalSectionRawMutex, LedEvent, 16>,
+    receiver: Receiver<'static, NoopRawMutex, LedEvent, 16>,
 ) {
     let level = 1;
     let mut event = None;
